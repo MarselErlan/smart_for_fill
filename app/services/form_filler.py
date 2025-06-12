@@ -267,19 +267,14 @@ class FormFiller:
                                 filled_count += 1
                                 logger.info(f"   🔘 Selected radio (general): {field_purpose}")
                             
-                        # Small delay between fields for visual effect
-                        await page.wait_for_timeout(1000 if not self.headless else 500)
-                        
+                            # Small delay between fields for visual effect
+                            await page.wait_for_timeout(1000 if not self.headless else 500)
+                            
                     except Exception as e:
                         results[field_purpose] = f"error: {str(e)}"
                         logger.warning(f"   ❌ Failed to fill field {field_purpose}: {e}")
                 
-                # Take screenshot of filled form
-                screenshot_path = f"data/filled_form_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                await page.screenshot(path=screenshot_path)
-                logger.info(f"📸 Screenshot saved: {screenshot_path}")
-                
-                # Manual submission mode - keep browser open
+                # Manual submission mode - keep browser open (no screenshot needed)
                 logger.info(f"🖱️  Browser kept open for manual submission")
                 logger.info(f"   You can now manually review and submit the form")
                 logger.info(f"   Close the browser when done")
@@ -294,7 +289,6 @@ class FormFiller:
                     "status": "success",
                     "filled_fields": filled_count,
                     "results": results,
-                    "screenshot": screenshot_path,
                     "submit_result": submit_result,
                     "timestamp": datetime.now().isoformat(),
                     "browser_status": "open_for_manual_submission",
