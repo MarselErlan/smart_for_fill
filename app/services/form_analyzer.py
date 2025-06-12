@@ -90,7 +90,7 @@ class FormAnalyzer:
                 self._create_or_update_form_record(url, "failed")
                 await browser.close()
                 return {"status": "error", "error": str(e)}
-
+    
     async def _analyze_with_gpt4(self, html: str) -> Dict[str, Any]:
         """Use GPT-4-turbo to analyze form structure with larger context window"""
         prompt = f"""
@@ -114,7 +114,7 @@ class FormAnalyzer:
                 }}
             ]
         }}
-
+        
         HTML:
         {html}  # Using full HTML since GPT-4-turbo has larger context
         """
