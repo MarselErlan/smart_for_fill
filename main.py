@@ -35,6 +35,29 @@ resume_extractor = ResumeExtractor()
 personal_info_extractor = PersonalInfoExtractor()
 cache_service = CacheService()
 
+# Clear Redis cache on startup for fresh analysis
+def clear_redis_cache_on_startup():
+    """Clear Redis cache on server startup to ensure fresh form analysis"""
+    try:
+        import redis
+        r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        r.ping()  # Test connection
+        
+        keys = r.keys("*")
+        if keys:
+            r.flushall()
+            logger.info(f"🧹 Cleared {len(keys)} cached entries on startup")
+        else:
+            logger.info("📭 No cache entries found on startup")
+            
+    except redis.ConnectionError:
+        logger.warning("⚠️  Redis not available - cache clearing skipped")
+    except Exception as e:
+        logger.warning(f"⚠️  Cache clearing failed: {e}")
+
+# Clear cache on startup
+clear_redis_cache_on_startup()
+
 # Initialize form pipeline for auto-filling
 try:
     form_pipeline = FormPipeline(
