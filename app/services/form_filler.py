@@ -529,6 +529,17 @@ class FormFiller:
                 
                 logger.info(f"🤖 Starting AI-powered form filling...")
                 
+                # Extract performance metrics for final summary
+                total_fields = len(field_mappings)
+                resume_data_count = sum(1 for m in field_mappings if m.get("data_source") == "resume_vectordb")
+                personal_data_count = sum(1 for m in field_mappings if m.get("data_source") == "personal_info_vectordb")
+                generated_count = sum(1 for m in field_mappings if m.get("data_source") == "generated")
+                user_provided_count = sum(1 for m in field_mappings if m.get("data_source") == "user_provided")
+                
+                real_data_count = resume_data_count + personal_data_count + user_provided_count
+                real_data_percentage = (real_data_count / total_fields * 100) if total_fields > 0 else 0
+                generation_percentage = (generated_count / total_fields * 100) if total_fields > 0 else 0
+                
                 # Process each field mapping
                 for i, mapping in enumerate(field_mappings):
                     selector = mapping["selector"]
@@ -616,6 +627,45 @@ class FormFiller:
                 logger.info(f"   ⚠️  IMPORTANT: Browser will stay open - DO NOT close this terminal!")
                 logger.info(f"   🌐 Browser is running and visible")
                 logger.info(f"   🔗 Current URL: {page.url}")
+                
+                # 🎉 BEAUTIFUL PERFORMANCE METRICS DISPLAY
+                logger.info(f"")
+                logger.info(f"{'='*60}")
+                logger.info(f"📊 OUTSTANDING PERFORMANCE METRICS:")
+                logger.info(f"{'='*60}")
+                
+                if real_data_percentage >= 80:
+                    logger.info(f"🏆 {real_data_percentage:.1f}% Real Data Usage - EXCEEDS EXPECTATIONS!")
+                elif real_data_percentage >= 60:
+                    logger.info(f"✅ {real_data_percentage:.1f}% Real Data Usage - EXCELLENT!")
+                elif real_data_percentage >= 40:
+                    logger.info(f"👍 {real_data_percentage:.1f}% Real Data Usage - GOOD!")
+                else:
+                    logger.info(f"⚠️  {real_data_percentage:.1f}% Real Data Usage - NEEDS IMPROVEMENT")
+                
+                logger.info(f"🤖 Only {generation_percentage:.1f}% Generation - {'MINIMAL AI generation' if generation_percentage <= 20 else 'MODERATE AI generation' if generation_percentage <= 40 else 'HIGH AI generation'}")
+                logger.info(f"")
+                logger.info(f"📈 DATA SOURCE BREAKDOWN:")
+                logger.info(f"   📄 Resume Vector DB: {resume_data_count} fields ({resume_data_count/total_fields*100:.1f}%)")
+                logger.info(f"   👤 Personal Info DB: {personal_data_count} fields ({personal_data_count/total_fields*100:.1f}%)")
+                if user_provided_count > 0:
+                    logger.info(f"   📝 User Provided: {user_provided_count} fields ({user_provided_count/total_fields*100:.1f}%)")
+                logger.info(f"   🤖 AI Generated: {generated_count} fields ({generation_percentage:.1f}%)")
+                logger.info(f"")
+                logger.info(f"🎯 TOTAL FIELDS PROCESSED: {total_fields}")
+                
+                # Performance rating
+                if real_data_percentage >= 80:
+                    logger.info(f"🏆 PERFORMANCE RATING: OUTSTANDING - Maximized authentic data usage!")
+                elif real_data_percentage >= 60:
+                    logger.info(f"⭐ PERFORMANCE RATING: EXCELLENT - High authentic data usage!")
+                elif real_data_percentage >= 40:
+                    logger.info(f"✅ PERFORMANCE RATING: GOOD - Moderate authentic data usage")
+                else:
+                    logger.info(f"📈 PERFORMANCE RATING: IMPROVING - Consider adding more data to vector databases")
+                
+                logger.info(f"{'='*60}")
+                logger.info(f"🎉 FORM FILLING COMPLETED WITH INTELLIGENCE!")
                 
                 submit_result = {"status": "manual_submission_mode", "message": "Browser kept open for manual submission"}
                 
@@ -737,6 +787,45 @@ class FormFiller:
                     screenshot_path = f"data/filled_form_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                     await page.screenshot(path=screenshot_path)
                     logger.info(f"📸 Screenshot saved: {screenshot_path}")
+                    
+                    # 🎉 BEAUTIFUL PERFORMANCE METRICS DISPLAY
+                    logger.info(f"")
+                    logger.info(f"{'='*60}")
+                    logger.info(f"📊 OUTSTANDING PERFORMANCE METRICS:")
+                    logger.info(f"{'='*60}")
+                    
+                    if real_data_percentage >= 80:
+                        logger.info(f"🏆 {real_data_percentage:.1f}% Real Data Usage - EXCEEDS EXPECTATIONS!")
+                    elif real_data_percentage >= 60:
+                        logger.info(f"✅ {real_data_percentage:.1f}% Real Data Usage - EXCELLENT!")
+                    elif real_data_percentage >= 40:
+                        logger.info(f"👍 {real_data_percentage:.1f}% Real Data Usage - GOOD!")
+                    else:
+                        logger.info(f"⚠️  {real_data_percentage:.1f}% Real Data Usage - NEEDS IMPROVEMENT")
+                    
+                    logger.info(f"🤖 Only {generation_percentage:.1f}% Generation - {'MINIMAL AI generation' if generation_percentage <= 20 else 'MODERATE AI generation' if generation_percentage <= 40 else 'HIGH AI generation'}")
+                    logger.info(f"")
+                    logger.info(f"📈 DATA SOURCE BREAKDOWN:")
+                    logger.info(f"   📄 Resume Vector DB: {resume_data_count} fields ({resume_data_count/total_fields*100:.1f}%)")
+                    logger.info(f"   👤 Personal Info DB: {personal_data_count} fields ({personal_data_count/total_fields*100:.1f}%)")
+                    if user_provided_count > 0:
+                        logger.info(f"   📝 User Provided: {user_provided_count} fields ({user_provided_count/total_fields*100:.1f}%)")
+                    logger.info(f"   🤖 AI Generated: {generated_count} fields ({generation_percentage:.1f}%)")
+                    logger.info(f"")
+                    logger.info(f"🎯 TOTAL FIELDS PROCESSED: {total_fields}")
+                    
+                    # Performance rating
+                    if real_data_percentage >= 80:
+                        logger.info(f"🏆 PERFORMANCE RATING: OUTSTANDING - Maximized authentic data usage!")
+                    elif real_data_percentage >= 60:
+                        logger.info(f"⭐ PERFORMANCE RATING: EXCELLENT - High authentic data usage!")
+                    elif real_data_percentage >= 40:
+                        logger.info(f"✅ PERFORMANCE RATING: GOOD - Moderate authentic data usage")
+                    else:
+                        logger.info(f"📈 PERFORMANCE RATING: IMPROVING - Consider adding more data to vector databases")
+                    
+                    logger.info(f"{'='*60}")
+                    logger.info(f"🎉 FORM FILLING COMPLETED WITH INTELLIGENCE!")
                     
                     # Handle submission
                     submit_result = None
