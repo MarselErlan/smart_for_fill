@@ -550,6 +550,23 @@ class FormFiller:
                     logger.info(f"📝 Filling field {i+1}/{len(field_mappings)}: {field_purpose}")
                     
                     try:
+                        # 🍪 AUTO-SKIP COOKIE AND PRIVACY FIELDS (user will handle manually)
+                        cookie_keywords = [
+                            'cookie', 'privacy', 'consent', 'vendor', 'tracking', 'analytics',
+                            'advertisement', 'marketing', 'preference', 'gdpr', 'ccpa',
+                            'allow_all', 'reject_all', 'accept_all', 'confirm_cookie',
+                            'select_all_vendors', 'apply_filters', 'cancel_filters',
+                            'ot-group', 'optanon', 'onetrust'
+                        ]
+                        
+                        is_cookie_field = any(keyword in field_purpose.lower() for keyword in cookie_keywords)
+                        is_cookie_selector = any(keyword in selector.lower() for keyword in cookie_keywords)
+                        
+                        if is_cookie_field or is_cookie_selector:
+                            results[field_purpose] = "auto-skipped (cookie/privacy)"
+                            logger.info(f"   🍪 Auto-skipped cookie/privacy field: {field_purpose}")
+                            continue
+                        
                         if action == "skip" or not value:
                             results[field_purpose] = "skipped"
                             logger.info(f"   ⏭️  Skipped: {field_purpose}")
@@ -615,7 +632,7 @@ class FormFiller:
                             
                             # Small delay between fields for visual effect
                             await page.wait_for_timeout(1000 if not self.headless else 500)
-                            
+                                
                     except Exception as e:
                         results[field_purpose] = f"error: {str(e)}"
                         logger.warning(f"   ❌ Failed to fill field {field_purpose}: {e}")
