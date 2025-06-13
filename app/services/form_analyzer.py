@@ -93,7 +93,7 @@ class FormAnalyzer:
     
     def _filter_form_content(self, html: str) -> str:
         """
-        🎯 Filter HTML content to focus on form-related elements and reduce token count
+        🎯 Enhanced form content filtering with better context preservation
         """
         import re
         from bs4 import BeautifulSoup
@@ -105,49 +105,156 @@ class FormAnalyzer:
             for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'meta', 'link']):
                 tag.decompose()
             
-            # Focus on form-related content
+            # Enhanced form-related content extraction
             form_elements = []
+            processed_elements = set()
             
-            # 1. Find actual form tags
+            # 1. Find actual form tags with full context
             forms = soup.find_all('form')
             if forms:
                 for form in forms:
                     form_elements.append(str(form))
+                    processed_elements.add(id(form))
             
-            # 2. Find input fields outside forms (common in modern SPAs)
+            # 2. Find input fields and their contextual containers
             inputs = soup.find_all(['input', 'textarea', 'select', 'button'])
             for inp in inputs:
-                # Get parent context for better understanding
-                parent = inp.find_parent(['div', 'section', 'fieldset', 'form'])
-                if parent and str(parent) not in form_elements:
-                    form_elements.append(str(parent))
+                if id(inp) in processed_elements:
+                    continue
+                    
+                # Get broader context - look for question text in surrounding elements
+                context_element = None
+                
+                # Strategy 1: Look for parent containers with question text
+                for parent_level in ['div', 'section', 'fieldset', 'li', 'tr', 'td']:
+                    parent = inp.find_parent(parent_level)
+                    if parent and id(parent) not in processed_elements:
+                        # Check if this parent contains question-like text
+                        parent_text = parent.get_text(strip=True)
+                        if len(parent_text) > 5 and ('?' in parent_text or 
+                                                   any(word in parent_text.lower() for word in 
+                                                       ['what', 'which', 'how', 'do you', 'are you', 'have you', 
+                                                        'please', 'enter', 'select', 'choose', 'provide'])):
+                            context_element = parent
+                            break
+                
+                # Strategy 2: If no good parent, look for nearby labels or text
+                if not context_element:
+                    # Look for associated label
+                    field_id = inp.get('id')
+                    if field_id:
+                        label = soup.find('label', {'for': field_id})
+                        if label:
+                            # Get the container that includes both label and input
+                            common_parent = label.find_parent(['div', 'section', 'fieldset'])
+                            if common_parent and id(common_parent) not in processed_elements:
+                                context_element = common_parent
+                
+                # Strategy 3: Look for preceding text elements
+                if not context_element:
+                    # Find the closest container that has meaningful text
+                    current = inp
+                    for _ in range(3):  # Look up to 3 levels up
+                        parent = current.find_parent(['div', 'section', 'fieldset', 'li'])
+                        if parent and id(parent) not in processed_elements:
+                            parent_text = parent.get_text(strip=True)
+                            if len(parent_text) > 10:  # Has substantial text
+                                context_element = parent
+                                break
+                        current = parent if parent else current
+                
+                # Add the best context element we found
+                if context_element:
+                    form_elements.append(str(context_element))
+                    processed_elements.add(id(context_element))
+                else:
+                    # Fallback: just add the input with minimal context
+                    minimal_parent = inp.find_parent(['div', 'span'])
+                    if minimal_parent and id(minimal_parent) not in processed_elements:
+                        form_elements.append(str(minimal_parent))
+                        processed_elements.add(id(minimal_parent))
+                    else:
+                        form_elements.append(str(inp))
             
-            # 3. Find labels and form-related text
+            # 3. Find standalone labels that might have been missed
             labels = soup.find_all('label')
             for label in labels:
-                form_elements.append(str(label))
+                if id(label) not in processed_elements:
+                    # Include label with its context
+                    label_parent = label.find_parent(['div', 'section', 'fieldset'])
+                    if label_parent and id(label_parent) not in processed_elements:
+                        form_elements.append(str(label_parent))
+                        processed_elements.add(id(label_parent))
+                    else:
+                        form_elements.append(str(label))
             
-            # 4. Look for common form containers
-            form_containers = soup.find_all(['div', 'section'], class_=re.compile(r'form|field|input|application', re.I))
-            for container in form_containers[:10]:  # Limit to first 10 to avoid bloat
-                form_elements.append(str(container))
+            # 4. Look for form containers with question-like patterns
+            question_patterns = [
+                r'form.*field', r'application.*field', r'question', r'input.*group',
+                r'field.*entry', r'form.*section', r'survey.*item'
+            ]
+            
+            for pattern in question_patterns:
+                containers = soup.find_all(['div', 'section'], class_=re.compile(pattern, re.I))
+                for container in containers[:15]:  # Limit to prevent bloat
+                    if id(container) not in processed_elements:
+                        container_text = container.get_text(strip=True)
+                        # Only include if it has substantial content
+                        if len(container_text) > 10:
+                            form_elements.append(str(container))
+                            processed_elements.add(id(container))
+            
+            # 5. Look for text elements that contain questions
+            question_elements = soup.find_all(text=re.compile(r'\?|what\s+is|which\s+|how\s+|do\s+you|are\s+you|please\s+', re.I))
+            for text_element in question_elements[:10]:  # Limit to prevent bloat
+                parent = text_element.parent
+                if parent and id(parent) not in processed_elements:
+                    # Get a reasonable container around the question
+                    question_container = parent.find_parent(['div', 'section', 'p', 'span'])
+                    if question_container and id(question_container) not in processed_elements:
+                        form_elements.append(str(question_container))
+                        processed_elements.add(id(question_container))
             
             # Combine and deduplicate
-            filtered_html = '\n'.join(set(form_elements))
+            filtered_html = '\n'.join(form_elements)
             
             # If still too long, truncate intelligently
-            if len(filtered_html) > 50000:  # ~25k tokens max
+            if len(filtered_html) > 60000:  # Increased limit for better context
                 logger.warning(f"HTML still large ({len(filtered_html)} chars), truncating...")
-                # Keep first 40k chars and last 10k chars to preserve structure
-                filtered_html = filtered_html[:40000] + "\n...[TRUNCATED]...\n" + filtered_html[-10000:]
+                # Keep first 45k chars and last 15k chars to preserve structure
+                filtered_html = filtered_html[:45000] + "\n...[TRUNCATED]...\n" + filtered_html[-15000:]
             
-            logger.info(f"📊 HTML filtered: {len(html)} → {len(filtered_html)} characters")
+            logger.info(f"📊 Enhanced HTML filtering: {len(html)} → {len(filtered_html)} characters")
             return filtered_html
             
         except Exception as e:
-            logger.warning(f"HTML filtering failed: {e}, using truncated original")
+            logger.warning(f"Enhanced HTML filtering failed: {e}, using simple truncation")
             # Fallback: simple truncation
             return html[:50000] if len(html) > 50000 else html
+
+    def _validate_and_fix_selector(self, selector: str) -> str:
+        """
+        🔧 Validate and fix CSS selectors, especially UUID-based ones
+        """
+        import re
+        
+        # If it's a UUID-like selector, ensure it's properly formatted
+        if selector.startswith('#') and len(selector) > 10:
+            # Extract the ID part
+            id_part = selector[1:]  # Remove the #
+            
+            # Check if it looks like a UUID (contains hyphens and alphanumeric)
+            if re.match(r'^[a-f0-9\-]+$', id_part, re.I):
+                # For UUID selectors, try different escaping approaches
+                escaped_options = [
+                    f'#{id_part}',  # Original
+                    f'[id="{id_part}"]',  # Attribute selector
+                    f'input[id="{id_part}"]',  # More specific
+                    f'*[id="{id_part}"]',  # Universal selector
+                ]
+                return escaped_options[1]  # Use attribute selector as it's most reliable
+        
+        return selector
 
     async def _analyze_with_gpt4(self, html: str) -> Dict[str, Any]:
         """Use GPT-4-turbo to analyze form structure with intelligent content filtering"""
@@ -158,39 +265,65 @@ class FormAnalyzer:
         prompt = f"""
         You are a form analysis expert. Analyze this HTML form content and create a detailed mapping of fields with contextual understanding.
         
+        CRITICAL REQUIREMENTS:
+        1. **Extract Question Text**: For each field, find the actual question or label text that describes what the field is asking
+        2. **Create Meaningful Purposes**: Create descriptive field purposes based on the question text, NOT the CSS selector
+        3. **Separate Purpose from Selector**: The "purpose" field should be human-readable, the "selector" field should be the technical CSS selector
+        
+        IMPORTANT DISTINCTION:
+        - **purpose**: Human-readable description (e.g., "primary_language", "work_experience", "salary_expectations")
+        - **selector**: Technical CSS selector for targeting the element (e.g., "#5dd27251-0fb1-4f7b-8489-b68536d46c78", "input[name='email']")
+        
         For each field, identify:
         1. Field type (text, email, file, radio, checkbox, select, textarea, etc.)
-        2. Purpose (name, email, phone, resume, work_authorization, salary, etc.)
-        3. Best CSS selector to target it
-        4. Any validation requirements
-        5. Any special attributes or requirements
-        6. **Context and Question Text**: Extract the actual question or label text associated with the field
-        7. **Options Available**: For radio buttons, checkboxes, and select fields, list available options
-        8. **Field Context**: Understand what the field is asking and provide context
+        2. **Purpose**: Create a meaningful, descriptive purpose based on the question text (NEVER use CSS selectors as purposes)
+        3. **Selector**: The actual CSS selector to target the element (keep the technical ID/selector)
+        4. **Question Text**: Extract the exact question or label text from the HTML
+        5. **Context**: Explain what this field is asking for in plain English
+        6. Options available (for radio, checkbox, select fields)
+        7. Validation requirements and attributes
 
         Format your response as a JSON object with the following structure:
         {{
             "fields": [
                 {{
                     "type": "field_type",
-                    "purpose": "field_purpose",
-                    "selector": "css_selector",
-                    "validation": ["validation_rules"],
-                    "attributes": {{}},
-                    "question_text": "actual_question_or_label_from_form",
+                    "purpose": "descriptive_purpose_based_on_question_NOT_selector",
+                    "selector": "actual_css_selector_or_id",
+                    "question_text": "exact_question_or_label_from_html",
+                    "context": "what_this_field_is_asking_for_in_plain_english",
                     "options": ["available_options_if_applicable"],
-                    "context": "what_this_field_is_asking_for"
+                    "validation": ["validation_rules"],
+                    "attributes": {{}}
                 }}
             ]
         }}
         
+        EXAMPLES of CORRECT purpose extraction:
+        - If HTML contains "What is your primary language?" with selector "#abc123" → purpose: "primary_language", selector: "#abc123"
+        - If HTML contains "Do you have a secondary language?" with selector "#def456" → purpose: "secondary_language", selector: "#def456"
+        - If HTML contains "Upload your resume" with selector "#resume-upload" → purpose: "resume_upload", selector: "#resume-upload"
+        - If HTML contains "Full Name" with selector "#name-field" → purpose: "full_name", selector: "#name-field"
+        - If HTML contains "Email Address" with selector "#email" → purpose: "email", selector: "#email"
+        - If HTML contains "Desired Annual Salary" with selector "#salary123" → purpose: "desired_annual_salary", selector: "#salary123"
+        
+        EXAMPLES of WRONG purpose extraction:
+        - ❌ purpose: "#5dd27251-0fb1-4f7b-8489-b68536d46c78" (this is a selector, not a purpose!)
+        - ❌ purpose: "textarea#abc123" (this is a selector, not a purpose!)
+        - ❌ purpose: "input[type='text']" (this is a selector, not a purpose!)
+        
         Pay special attention to:
+        - Language preference questions ("What is your primary language?", "Secondary language?")
         - Work authorization questions and their exact wording
         - Radio button groups and their available options
         - Dropdown/select field options
-        - Complex textarea questions that need contextual understanding
+        - File upload fields (resume, cover letter, etc.)
+        - Personal information fields (name, email, phone)
         - Salary and compensation questions
+        - Experience and background questions
         - Demographic survey questions
+        
+        CRITICAL: The "purpose" field must ALWAYS be a human-readable description of what the field is asking for, NEVER a CSS selector or technical identifier!
         
         HTML Content (filtered for form elements):
         {filtered_html}
@@ -207,6 +340,30 @@ class FormAnalyzer:
                 response_format={"type": "json_object"}  # Ensure JSON response
             )
             analysis = response.choices[0].message.content
+            
+            # Post-process the analysis to fix CSS selectors
+            try:
+                import json
+                parsed_analysis = json.loads(analysis)
+                
+                # Fix selectors in the fields
+                if "fields" in parsed_analysis:
+                    for field in parsed_analysis["fields"]:
+                        if "selector" in field:
+                            original_selector = field["selector"]
+                            fixed_selector = self._validate_and_fix_selector(original_selector)
+                            field["selector"] = fixed_selector
+                            
+                            # Log if we made a change
+                            if original_selector != fixed_selector:
+                                logger.info(f"🔧 Fixed selector: {original_selector} → {fixed_selector}")
+                
+                # Convert back to JSON string
+                analysis = json.dumps(parsed_analysis)
+                
+            except json.JSONDecodeError:
+                logger.warning("Could not parse analysis for selector fixing")
+            
             return {
                 "status": "success",
                 "field_map": analysis,
