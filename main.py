@@ -329,12 +329,16 @@ async def run_pipeline(request: PipelineRequest) -> Dict[str, Any]:
             
             try:
                 # Search resume for relevant info
-                resume_results = resume_extractor.search_resume("professional experience skills education", k=5)
-                resume_text = " ".join([r.get("content", "") for r in resume_results])
+                resume_search_result = resume_extractor.search_resume("professional experience skills education", k=5)
+                resume_text = ""
+                if resume_search_result and "results" in resume_search_result:
+                    resume_text = " ".join([r.get("content", "") for r in resume_search_result["results"]])
                 
                 # Search personal info for contact details
-                personal_results = personal_info_extractor.search_personal_info("contact information work authorization salary", k=3)
-                personal_text = " ".join([r.get("content", "") for r in personal_results])
+                personal_search_result = personal_info_extractor.search_personal_info("contact information work authorization salary", k=3)
+                personal_text = ""
+                if personal_search_result and "results" in personal_search_result:
+                    personal_text = " ".join([r.get("content", "") for r in personal_search_result["results"]])
                 
                 # Combine vector database data
                 vector_data = {
