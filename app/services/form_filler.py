@@ -327,9 +327,9 @@ class FormFiller:
             all_results = []
             for query in search_queries:
                 try:
-                    results = resume_extractor.search_resume(query, k=3)
-                    if results:
-                        all_results.extend(results)
+                    search_result = resume_extractor.search_resume(query, k=3)
+                    if search_result and "results" in search_result:
+                        all_results.extend(search_result["results"])
                 except Exception as e:
                     logger.warning(f"Resume search failed for '{query}': {e}")
             
