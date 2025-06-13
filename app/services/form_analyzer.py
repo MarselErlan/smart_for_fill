@@ -91,10 +91,73 @@ class FormAnalyzer:
                 await browser.close()
                 return {"status": "error", "error": str(e)}
     
+    def _filter_form_content(self, html: str) -> str:
+        """
+        🎯 Filter HTML content to focus on form-related elements and reduce token count
+        """
+        import re
+        from bs4 import BeautifulSoup
+        
+        try:
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            # Remove unnecessary elements that don't contribute to form analysis
+            for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'meta', 'link']):
+                tag.decompose()
+            
+            # Focus on form-related content
+            form_elements = []
+            
+            # 1. Find actual form tags
+            forms = soup.find_all('form')
+            if forms:
+                for form in forms:
+                    form_elements.append(str(form))
+            
+            # 2. Find input fields outside forms (common in modern SPAs)
+            inputs = soup.find_all(['input', 'textarea', 'select', 'button'])
+            for inp in inputs:
+                # Get parent context for better understanding
+                parent = inp.find_parent(['div', 'section', 'fieldset', 'form'])
+                if parent and str(parent) not in form_elements:
+                    form_elements.append(str(parent))
+            
+            # 3. Find labels and form-related text
+            labels = soup.find_all('label')
+            for label in labels:
+                form_elements.append(str(label))
+            
+            # 4. Look for common form containers
+            form_containers = soup.find_all(['div', 'section'], class_=re.compile(r'form|field|input|application', re.I))
+            for container in form_containers[:10]:  # Limit to first 10 to avoid bloat
+                form_elements.append(str(container))
+            
+            # Combine and deduplicate
+            filtered_html = '\n'.join(set(form_elements))
+            
+            # If still too long, truncate intelligently
+            if len(filtered_html) > 50000:  # ~25k tokens max
+                logger.warning(f"HTML still large ({len(filtered_html)} chars), truncating...")
+                # Keep first 40k chars and last 10k chars to preserve structure
+                filtered_html = filtered_html[:40000] + "\n...[TRUNCATED]...\n" + filtered_html[-10000:]
+            
+            logger.info(f"📊 HTML filtered: {len(html)} → {len(filtered_html)} characters")
+            return filtered_html
+            
+        except Exception as e:
+            logger.warning(f"HTML filtering failed: {e}, using truncated original")
+            # Fallback: simple truncation
+            return html[:50000] if len(html) > 50000 else html
+
     async def _analyze_with_gpt4(self, html: str) -> Dict[str, Any]:
-        """Use GPT-4-turbo to analyze form structure with larger context window"""
+        """Use GPT-4-turbo to analyze form structure with intelligent content filtering"""
+        
+        # Filter and reduce HTML content
+        filtered_html = self._filter_form_content(html)
+        
         prompt = f"""
-        You are a form analysis expert. Analyze this HTML form and create a detailed mapping of fields with contextual understanding.
+        You are a form analysis expert. Analyze this HTML form content and create a detailed mapping of fields with contextual understanding.
+        
         For each field, identify:
         1. Field type (text, email, file, radio, checkbox, select, textarea, etc.)
         2. Purpose (name, email, phone, resume, work_authorization, salary, etc.)
@@ -129,9 +192,10 @@ class FormAnalyzer:
         - Salary and compensation questions
         - Demographic survey questions
         
-        HTML:
-        {html}  # Using full HTML since GPT-4-turbo has larger context
+        HTML Content (filtered for form elements):
+        {filtered_html}
         """
+        
         try:
             response = await self.client.chat.completions.create(
                 model="gpt-4-0125-preview",  # Using GPT-4-turbo with 128k context
