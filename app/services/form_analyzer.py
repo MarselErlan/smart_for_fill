@@ -94,13 +94,16 @@ class FormAnalyzer:
     async def _analyze_with_gpt4(self, html: str) -> Dict[str, Any]:
         """Use GPT-4-turbo to analyze form structure with larger context window"""
         prompt = f"""
-        You are a form analysis expert. Analyze this HTML form and create a detailed mapping of fields.
+        You are a form analysis expert. Analyze this HTML form and create a detailed mapping of fields with contextual understanding.
         For each field, identify:
-        1. Field type (text, email, file, etc.)
-        2. Purpose (name, email, phone, resume, etc.)
+        1. Field type (text, email, file, radio, checkbox, select, textarea, etc.)
+        2. Purpose (name, email, phone, resume, work_authorization, salary, etc.)
         3. Best CSS selector to target it
         4. Any validation requirements
         5. Any special attributes or requirements
+        6. **Context and Question Text**: Extract the actual question or label text associated with the field
+        7. **Options Available**: For radio buttons, checkboxes, and select fields, list available options
+        8. **Field Context**: Understand what the field is asking and provide context
 
         Format your response as a JSON object with the following structure:
         {{
@@ -110,10 +113,21 @@ class FormAnalyzer:
                     "purpose": "field_purpose",
                     "selector": "css_selector",
                     "validation": ["validation_rules"],
-                    "attributes": {{}}
+                    "attributes": {{}},
+                    "question_text": "actual_question_or_label_from_form",
+                    "options": ["available_options_if_applicable"],
+                    "context": "what_this_field_is_asking_for"
                 }}
             ]
         }}
+        
+        Pay special attention to:
+        - Work authorization questions and their exact wording
+        - Radio button groups and their available options
+        - Dropdown/select field options
+        - Complex textarea questions that need contextual understanding
+        - Salary and compensation questions
+        - Demographic survey questions
         
         HTML:
         {html}  # Using full HTML since GPT-4-turbo has larger context

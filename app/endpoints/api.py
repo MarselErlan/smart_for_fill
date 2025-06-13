@@ -31,7 +31,7 @@ class FormAnalysisRequest(BaseModel):
 
 class PipelineRequest(BaseModel):
     url: HttpUrl
-    user_data: Dict[str, Any]
+    user_data: Dict[str, Any] = {}  # Optional: LLM can generate professional data if minimal
     force_refresh: bool = False
     submit: bool = False
     manual_submit: bool = True  # New: Keep browser open for manual submission
@@ -39,7 +39,7 @@ class PipelineRequest(BaseModel):
 
 class PipelinePreviewRequest(BaseModel):
     url: HttpUrl
-    user_data: Dict[str, Any]
+    user_data: Dict[str, Any] = {}  # Optional: LLM can generate professional data if minimal
     force_refresh: bool = False
 
 class BatchPipelineRequest(BaseModel):
@@ -47,7 +47,7 @@ class BatchPipelineRequest(BaseModel):
 
 class AutoFillRequest(BaseModel):
     url: HttpUrl
-    user_data: Dict[str, Any]
+    user_data: Dict[str, Any] = {}  # Optional: LLM can generate professional data if minimal
     submit: bool = False
     manual_submit: bool = False  # New: Keep browser open for manual submission
     headless: bool = False  # New: Control browser visibility
@@ -55,19 +55,19 @@ class AutoFillRequest(BaseModel):
 class FormFillRequest(BaseModel):
     url: HttpUrl
     field_map: str  # JSON string from form analyzer
-    user_data: Dict[str, Any]
+    user_data: Dict[str, Any] = {}  # Optional: LLM can generate professional data if minimal
     submit: bool = False
     manual_submit: bool = False  # New: Keep browser open for manual submission
     headless: bool = False  # New: Control browser visibility
 
 class AutoFillPreviewRequest(BaseModel):
     url: HttpUrl
-    user_data: Dict[str, Any]
+    user_data: Dict[str, Any] = {}  # Optional: LLM can generate professional data if minimal
 
 class FormFillPreviewRequest(BaseModel):
     url: HttpUrl
     field_map: str
-    user_data: Dict[str, Any]
+    user_data: Dict[str, Any] = {}  # Optional: LLM can generate professional data if minimal
 
 class UrlStatus(BaseModel):
     url: str

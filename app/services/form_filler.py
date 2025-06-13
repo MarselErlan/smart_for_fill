@@ -101,29 +101,55 @@ class FormFiller:
     async def _generate_field_values(self, fields: List[Dict], user_data: Dict) -> Dict[str, Any]:
         """
         Use LLM to intelligently determine what values to fill in each field
+        Can work with minimal user data - LLM generates professional responses based on form context
         """
+        
+        # If user_data is minimal or empty, let LLM know to generate professional data
+        has_minimal_data = not user_data or len(user_data) <= 3
+        
         prompt = f"""
         You are a professional form filler with expertise in job applications and professional forms.
+        You have advanced contextual understanding and can generate intelligent, professional responses.
         
-        Your task is to analyze form fields and determine the most appropriate values to fill based on the user's professional data.
+        {'IMPORTANT: The user has provided minimal data. You should generate realistic, professional information based on the form context and job requirements.' if has_minimal_data else 'Your task is to analyze form fields and determine the most appropriate values based on the provided user data.'}
         
         FORM FIELDS TO ANALYZE:
         {json.dumps(fields, indent=2)}
         
-        USER'S PROFESSIONAL DATA:
-        {json.dumps(user_data, indent=2)}
+        USER'S PROVIDED DATA (may be minimal):
+        {json.dumps(user_data, indent=2) if user_data else "No specific user data provided - generate professional responses"}
         
-        INSTRUCTIONS:
-        1. For each field, determine the most appropriate value from the user's data
-        2. If a field requires professional formatting (like phone numbers, addresses), format appropriately
-        3. For file upload fields (resume, cover letter), indicate the file type needed
-        4. For dropdown/select fields, choose the most relevant option if possible
-        5. For text areas (cover letter, additional info), write professional content
-        6. Skip fields that don't have relevant data or are optional
-        7. Be professional and accurate - this is for job applications
-        8. For radio buttons and checkboxes, choose appropriate values based on context
-        9. Handle work authorization questions intelligently
-        10. Generate professional cover letters and additional information when needed
+        ADVANCED INSTRUCTIONS:
+        1. **Contextual Analysis**: Analyze each field's purpose and the job/form context
+        2. **Professional Generation**: Generate realistic, professional information when user data is minimal
+        3. **Job-Relevant Responses**: Create responses that match the job requirements and industry
+        4. **Intelligent Reasoning**: Think through the best response based on form context and job type
+        5. **Work Authorization**: Generate appropriate work authorization responses for the target country
+        6. **Professional Formatting**: Format all data professionally (phone numbers, addresses, etc.)
+        7. **Realistic Details**: Create believable professional profiles with consistent information
+        8. **Industry Alignment**: Match generated content to the job industry and role requirements
+        9. **Geographic Relevance**: Generate location-appropriate information
+        10. **Professional Writing**: Write compelling cover letters and professional summaries
+        
+        GENERATION GUIDELINES (when user data is minimal):
+        - **Name**: Generate a professional, realistic name
+        - **Contact Info**: Create realistic email, phone number for the target region
+        - **Location**: Generate appropriate location based on job location/requirements
+        - **Professional Background**: Create relevant work experience and company names
+        - **Skills**: Generate skills that match the job requirements
+        - **URLs**: Create realistic professional URLs (LinkedIn, GitHub, portfolio)
+        - **Work Authorization**: Provide appropriate responses based on job location
+        - **Salary**: Generate realistic salary expectations for the role and location
+        - **Cover Letter**: Write compelling, job-specific cover letters
+        - **Additional Info**: Create relevant professional summaries
+        
+        SPECIAL HANDLING FOR COMMON FORM PATTERNS:
+        - **Work Authorization**: Analyze job location and provide appropriate visa/sponsorship responses
+        - **Salary Questions**: Research typical salaries for the role and location
+        - **Cover Letters**: Write personalized cover letters that highlight relevant experience for the specific job
+        - **Additional Info**: Generate professional summaries that match the job requirements
+        - **Hybrid Work**: Provide positive responses about work flexibility
+        - **Demographics**: Handle optional demographic questions appropriately (can skip or decline)
         
         RESPONSE FORMAT (JSON):
         {{
@@ -132,15 +158,15 @@ class FormFiller:
                     "selector": "css_selector_from_field",
                     "field_type": "input_type",
                     "field_purpose": "what_this_field_is_for",
-                    "value": "value_to_fill_or_null_if_skip",
+                    "value": "intelligent_generated_value_or_null_if_skip",
                     "action": "fill|upload|select|skip|check|radio",
-                    "reasoning": "why_this_value_was_chosen"
+                    "reasoning": "detailed_explanation_of_generated_value_and_context_analysis"
                 }}
             ],
-            "summary": "brief_summary_of_filling_strategy"
+            "summary": "comprehensive_summary_of_intelligent_generation_strategy"
         }}
         
-        Be thorough but professional. Only fill fields where you have appropriate data.
+        Be creative, professional, and contextually intelligent. Generate realistic information that would make a strong job application.
         """
         
         try:
@@ -149,16 +175,16 @@ class FormFiller:
                 messages=[
                     {
                         "role": "system", 
-                        "content": "You are a professional form filling expert. You understand job application forms and can intelligently map user data to form fields. Always respond in valid JSON format."
+                        "content": "You are a professional form filling expert with advanced contextual understanding and creative generation capabilities. You can analyze job forms and generate realistic, professional information that creates strong job applications. You understand job markets, professional communication, and can create compelling professional profiles. Always respond in valid JSON format."
                     },
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.2,  # Low temperature for consistent, professional responses
+                temperature=0.3,  # Slightly higher temperature for creative generation while maintaining professionalism
                 response_format={"type": "json_object"}
             )
             
             result = json.loads(response.choices[0].message.content)
-            logger.info(f"LLM generated field mappings: {result.get('summary', 'No summary')}")
+            logger.info(f"LLM generated intelligent field mappings: {result.get('summary', 'No summary')}")
             
             return {
                 "status": "success",
