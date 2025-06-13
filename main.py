@@ -1,24 +1,104 @@
 #!/usr/bin/env python3
 """
-Smart Form Fill - Main FastAPI Application
-Enhanced with vector database re-embedding endpoints
+Smart Form Fill API - Vector Database Management + Form Auto-Fill Pipeline
+Comprehensive API for managing resume/personal info vector databases and form filling
 """
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Dict, Any, Optional
 import os
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, HttpUrl
+from typing import Dict, Any, List, Optional
 from datetime import datetime
+from loguru import logger
 
-# Import our extractors
 from resume_extractor import ResumeExtractor
 from personal_info_extractor import PersonalInfoExtractor
 
+# Import form filling services
+from app.services.form_pipeline import FormPipeline
+from app.services.cache_service import CacheService
+
+# Load environment variables
+load_dotenv()
+
+# Get environment variables
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/smart_form_filler")
+
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY environment variable is required")
+
+# Initialize services
+resume_extractor = ResumeExtractor()
+personal_info_extractor = PersonalInfoExtractor()
+cache_service = CacheService()
+
+# Initialize form pipeline for auto-filling
+try:
+    form_pipeline = FormPipeline(
+        openai_api_key=OPENAI_API_KEY,
+        db_url=DATABASE_URL,
+        cache_service=cache_service
+    )
+    logger.info("✅ Form pipeline initialized successfully")
+except Exception as e:
+    logger.error(f"❌ Form pipeline initialization failed: {e}")
+    form_pipeline = None
+
+# Pydantic models
+class ReembedResponse(BaseModel):
+    status: str
+    message: str
+    processing_time: float
+    database_info: Dict[str, Any]
+
+class SearchRequest(BaseModel):
+    query: str
+    k: int = 3
+
+class SearchResponse(BaseModel):
+    status: str
+    query: str
+    results: List[Dict[str, Any]]
+    search_time: float
+
+class StatusResponse(BaseModel):
+    status: str
+    database_info: Dict[str, Any]
+    last_updated: Optional[str]
+
+class BatchReembedResponse(BaseModel):
+    status: str
+    message: str
+    results: Dict[str, Any]
+    total_time: float
+
+# Form pipeline models
+class PipelineRequest(BaseModel):
+    url: HttpUrl
+    user_data: Dict[str, Any] = {}
+    force_refresh: bool = False
+    submit: bool = False
+    manual_submit: bool = True
+    headless: bool = False
+    use_documents: bool = True
+
+class PipelineResponse(BaseModel):
+    status: str
+    url: str
+    pipeline_status: str
+    steps: Dict[str, Any]
+    message: str
+
+# Initialize FastAPI app
 app = FastAPI(
     title="Smart Form Fill API",
-    description="AI-powered form filling with vector database management",
-    version="2.0.0"
+    description="Vector Database Management + Form Auto-Fill Pipeline",
+    version="2.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 # Add CORS middleware
@@ -30,318 +110,362 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Pydantic models for API responses
-class ReembedResponse(BaseModel):
-    status: str
-    message: str
-    timestamp: str
-    processing_time: Optional[float] = None
-    details: Optional[Dict[str, Any]] = None
+# ============================================================================
+# VECTOR DATABASE ENDPOINTS
+# ============================================================================
 
-class VectorDBStatus(BaseModel):
-    database_type: str
-    status: str
-    last_updated: Optional[str] = None
-    total_entries: Optional[int] = None
-    latest_entry: Optional[Dict[str, Any]] = None
-
-@app.get("/")
-async def root():
-    """Root endpoint with API information"""
-    return {
-        "message": "Smart Form Fill API with Vector Database Management",
-        "version": "2.0.0",
-        "endpoints": {
-            "resume": {
-                "reembed": "/api/v1/resume/reembed",
-                "status": "/api/v1/resume/status",
-                "search": "/api/v1/resume/search"
-            },
-            "personal_info": {
-                "reembed": "/api/v1/personal-info/reembed", 
-                "status": "/api/v1/personal-info/status",
-                "search": "/api/v1/personal-info/search"
-            }
-        }
-    }
-
-@app.post("/api/v1/resume/reembed", response_model=ReembedResponse)
-async def reembed_resume():
-    """
-    Re-embed the resume document and update the vector database
-    Processes docs/resume/ERIC_ABRAM33.docx and saves to resume/vectordb
-    """
-    try:
-        start_time = datetime.now()
-        
-        # Initialize resume extractor
-        extractor = ResumeExtractor()
-        
-        # Process the resume
-        result = extractor.process_resume()
-        
-        end_time = datetime.now()
-        processing_time = (end_time - start_time).total_seconds()
-        
-        if result["status"] == "success":
-            return ReembedResponse(
-                status="success",
-                message="Resume vector database updated successfully",
-                timestamp=result["timestamp"],
-                processing_time=processing_time,
-                details={
-                    "documents_loaded": result["documents_loaded"],
-                    "chunks_created": result["chunks_created"],
-                    "embedding_dimension": result["embedding_data"]["dimension"],
-                    "model": result["embedding_data"]["model"],
-                    "vectorstore_created": result["vectorstore_created"],
-                    "files_created": result["files_created"]
-                }
-            )
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Resume processing failed: {result.get('error', 'Unknown error')}"
-            )
-            
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to re-embed resume: {str(e)}"
-        )
-
-@app.post("/api/v1/personal-info/reembed", response_model=ReembedResponse)
-async def reembed_personal_info():
-    """
-    Re-embed the personal information document and update the vector database
-    Processes docs/info/personal_information.txt and saves to info/vectordb
-    """
-    try:
-        start_time = datetime.now()
-        
-        # Initialize personal info extractor
-        extractor = PersonalInfoExtractor()
-        
-        # Process the personal info
-        result = extractor.process_personal_info()
-        
-        end_time = datetime.now()
-        processing_time = (end_time - start_time).total_seconds()
-        
-        if result["status"] == "success":
-            return ReembedResponse(
-                status="success",
-                message="Personal info vector database updated successfully",
-                timestamp=result["timestamp"],
-                processing_time=processing_time,
-                details={
-                    "documents_loaded": result["documents_loaded"],
-                    "chunks_created": result["chunks_created"],
-                    "embedding_dimension": result["embedding_data"]["dimension"],
-                    "model": result["embedding_data"]["model"],
-                    "vectorstore_created": result["vectorstore_created"],
-                    "files_created": result["files_created"]
-                }
-            )
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Personal info processing failed: {result.get('error', 'Unknown error')}"
-            )
-            
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to re-embed personal info: {str(e)}"
-        )
-
-@app.get("/api/v1/resume/status", response_model=VectorDBStatus)
+@app.get("/api/v1/resume/status", response_model=StatusResponse)
 async def get_resume_status():
     """Get the current status of the resume vector database"""
     try:
-        from pathlib import Path
-        import json
+        # Check if vector database exists and get info
+        vectordb_path = "resume/vectordb"
+        index_file = f"{vectordb_path}/index.json"
         
-        index_file = Path("resume/vectordb/index.json")
-        
-        if not index_file.exists():
-            return VectorDBStatus(
-                database_type="resume",
-                status="not_initialized",
-                message="Resume vector database not found. Run /api/v1/resume/reembed first."
+        if not os.path.exists(index_file):
+            return StatusResponse(
+                status="not_found",
+                database_info={"message": "Resume vector database not found. Run re-embed first."},
+                last_updated=None
             )
         
+        # Read index file for database info
+        import json
         with open(index_file, 'r') as f:
             index_data = json.load(f)
         
-        latest_entry = index_data["entries"][-1] if index_data["entries"] else None
-        
-        return VectorDBStatus(
-            database_type="resume",
+        return StatusResponse(
             status="ready",
-            last_updated=index_data.get("last_updated"),
-            total_entries=index_data.get("total_entries", 0),
-            latest_entry=latest_entry
+            database_info={
+                "total_documents": len(index_data.get("files", [])),
+                "latest_file": index_data.get("latest_file", ""),
+                "vector_dimensions": 1536,
+                "database_path": vectordb_path
+            },
+            last_updated=index_data.get("timestamp", "")
         )
-        
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get resume status: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to get resume status: {str(e)}")
 
-@app.get("/api/v1/personal-info/status", response_model=VectorDBStatus)
+@app.get("/api/v1/personal-info/status", response_model=StatusResponse)
 async def get_personal_info_status():
     """Get the current status of the personal info vector database"""
     try:
-        from pathlib import Path
-        import json
+        vectordb_path = "info/vectordb"
+        index_file = f"{vectordb_path}/index.json"
         
-        index_file = Path("info/vectordb/index.json")
-        
-        if not index_file.exists():
-            return VectorDBStatus(
-                database_type="personal_info",
-                status="not_initialized",
-                message="Personal info vector database not found. Run /api/v1/personal-info/reembed first."
+        if not os.path.exists(index_file):
+            return StatusResponse(
+                status="not_found",
+                database_info={"message": "Personal info vector database not found. Run re-embed first."},
+                last_updated=None
             )
         
+        import json
         with open(index_file, 'r') as f:
             index_data = json.load(f)
         
-        latest_entry = index_data["entries"][-1] if index_data["entries"] else None
-        
-        return VectorDBStatus(
-            database_type="personal_info",
+        return StatusResponse(
             status="ready",
-            last_updated=index_data.get("last_updated"),
-            total_entries=index_data.get("total_entries", 0),
-            latest_entry=latest_entry
+            database_info={
+                "total_documents": len(index_data.get("files", [])),
+                "latest_file": index_data.get("latest_file", ""),
+                "vector_dimensions": 1536,
+                "database_path": vectordb_path
+            },
+            last_updated=index_data.get("timestamp", "")
         )
-        
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get personal info status: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to get personal info status: {str(e)}")
 
-@app.post("/api/v1/resume/search")
-async def search_resume(query: str, k: int = 5):
+@app.post("/api/v1/resume/reembed", response_model=ReembedResponse)
+async def reembed_resume():
+    """Re-process and re-embed the resume document"""
+    try:
+        start_time = datetime.now()
+        
+        # Process resume with LangChain
+        result = resume_extractor.process_resume()
+        
+        end_time = datetime.now()
+        processing_time = (end_time - start_time).total_seconds()
+        
+        return ReembedResponse(
+            status="success",
+            message="Resume re-embedded successfully",
+            processing_time=processing_time,
+            database_info=result
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to re-embed resume: {str(e)}")
+
+@app.post("/api/v1/personal-info/reembed", response_model=ReembedResponse)
+async def reembed_personal_info():
+    """Re-process and re-embed the personal information document"""
+    try:
+        start_time = datetime.now()
+        
+        # Process personal info with LangChain
+        result = personal_info_extractor.process_personal_info()
+        
+        end_time = datetime.now()
+        processing_time = (end_time - start_time).total_seconds()
+        
+        return ReembedResponse(
+            status="success",
+            message="Personal info re-embedded successfully",
+            processing_time=processing_time,
+            database_info=result
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to re-embed personal info: {str(e)}")
+
+@app.post("/api/v1/resume/search", response_model=SearchResponse)
+async def search_resume(query: str = Query(..., description="Search query"), k: int = Query(3, description="Number of results")):
     """Search the resume vector database"""
     try:
-        extractor = ResumeExtractor()
-        results = extractor.search_resume(query, k=k)
+        start_time = datetime.now()
         
-        if "error" in results:
-            raise HTTPException(
-                status_code=404,
-                detail=results["error"]
-            )
+        # Perform search
+        results = resume_extractor.search_resume(query, k)
         
-        return {
-            "status": "success",
-            "query": query,
-            "results": results["results"],
-            "total_results": results["total_results"]
-        }
+        end_time = datetime.now()
+        search_time = (end_time - start_time).total_seconds()
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Resume search failed: {str(e)}"
+        return SearchResponse(
+            status="success",
+            query=query,
+            results=results,
+            search_time=search_time
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Resume search failed: {str(e)}")
 
-@app.post("/api/v1/personal-info/search")
-async def search_personal_info(query: str, k: int = 5):
+@app.post("/api/v1/personal-info/search", response_model=SearchResponse)
+async def search_personal_info(query: str = Query(..., description="Search query"), k: int = Query(3, description="Number of results")):
     """Search the personal info vector database"""
     try:
-        extractor = PersonalInfoExtractor()
-        results = extractor.search_personal_info(query, k=k)
+        start_time = datetime.now()
         
-        if "error" in results:
-            raise HTTPException(
-                status_code=404,
-                detail=results["error"]
-            )
+        # Perform search
+        results = personal_info_extractor.search_personal_info(query, k)
         
-        return {
-            "status": "success",
-            "query": query,
-            "results": results["results"],
-            "total_results": results["total_results"]
-        }
+        end_time = datetime.now()
+        search_time = (end_time - start_time).total_seconds()
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Personal info search failed: {str(e)}"
+        return SearchResponse(
+            status="success",
+            query=query,
+            results=results,
+            search_time=search_time
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Personal info search failed: {str(e)}")
 
-@app.post("/api/v1/reembed-all")
+@app.post("/api/v1/reembed-all", response_model=BatchReembedResponse)
 async def reembed_all():
-    """
-    Re-embed both resume and personal info vector databases
-    Convenient endpoint to update everything at once
-    """
+    """Re-embed both resume and personal info databases"""
     try:
         start_time = datetime.now()
         results = {}
         
         # Re-embed resume
         try:
-            resume_extractor = ResumeExtractor()
             resume_result = resume_extractor.process_resume()
-            results["resume"] = {
-                "status": resume_result["status"],
-                "timestamp": resume_result.get("timestamp"),
-                "details": resume_result.get("embedding_data", {})
-            }
+            results["resume"] = {"status": "success", "info": resume_result}
         except Exception as e:
-            results["resume"] = {
-                "status": "error",
-                "error": str(e)
-            }
+            results["resume"] = {"status": "error", "error": str(e)}
         
         # Re-embed personal info
         try:
-            info_extractor = PersonalInfoExtractor()
-            info_result = info_extractor.process_personal_info()
-            results["personal_info"] = {
-                "status": info_result["status"],
-                "timestamp": info_result.get("timestamp"),
-                "details": info_result.get("embedding_data", {})
-            }
+            personal_info_result = personal_info_extractor.process_personal_info()
+            results["personal_info"] = {"status": "success", "info": personal_info_result}
         except Exception as e:
-            results["personal_info"] = {
-                "status": "error",
-                "error": str(e)
-            }
+            results["personal_info"] = {"status": "error", "error": str(e)}
         
         end_time = datetime.now()
-        processing_time = (end_time - start_time).total_seconds()
+        total_time = (end_time - start_time).total_seconds()
         
         # Determine overall status
-        overall_status = "success"
-        if results["resume"]["status"] == "error" or results["personal_info"]["status"] == "error":
-            overall_status = "partial_success" if (results["resume"]["status"] == "success" or results["personal_info"]["status"] == "success") else "error"
+        overall_status = "success" if all(r["status"] == "success" for r in results.values()) else "partial"
         
-        return {
-            "status": overall_status,
-            "message": f"Batch re-embedding completed in {processing_time:.2f} seconds",
-            "processing_time": processing_time,
-            "results": results,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Batch re-embedding failed: {str(e)}"
+        return BatchReembedResponse(
+            status=overall_status,
+            message=f"Batch re-embedding completed in {total_time:.2f}s",
+            results=results,
+            total_time=total_time
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch re-embedding failed: {str(e)}")
+
+# ============================================================================
+# FORM AUTO-FILL PIPELINE ENDPOINTS
+# ============================================================================
+
+@app.post("/api/run-pipeline", response_model=PipelineResponse)
+async def run_pipeline(request: PipelineRequest) -> Dict[str, Any]:
+    """
+    🚀 MAIN ENDPOINT: Run complete form filling pipeline (analyze → fill → submit)
+    
+    Features:
+    - Automatic form analysis and filling
+    - Vector database integration for user data
+    - Manual submission mode (keeps browser open)
+    - Document-based user data loading
+    """
+    if not form_pipeline:
+        raise HTTPException(
+            status_code=503, 
+            detail="Form pipeline service not available. Check environment variables."
+        )
+    
+    try:
+        url = str(request.url)
+        user_data = request.user_data.copy()
+        
+        # Load user data from vector databases if requested
+        if request.use_documents:
+            logger.info("📄 Loading user data from vector databases")
+            
+            try:
+                # Search resume for relevant info
+                resume_results = resume_extractor.search_resume("professional experience skills education", k=5)
+                resume_text = " ".join([r.get("content", "") for r in resume_results])
+                
+                # Search personal info for contact details
+                personal_results = personal_info_extractor.search_personal_info("contact information work authorization salary", k=3)
+                personal_text = " ".join([r.get("content", "") for r in personal_results])
+                
+                # Combine vector database data
+                vector_data = {
+                    "resume_content": resume_text,
+                    "personal_info": personal_text,
+                    "data_source": "vector_databases"
+                }
+                
+                # Merge with provided user_data
+                user_data.update(vector_data)
+                logger.info("✅ Vector database data loaded successfully")
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Could not load vector database data: {e}")
+        
+        # Run the form pipeline
+        if request.manual_submit:
+            logger.info("🖱️ Manual submission mode - browser will stay open")
+            
+            # For manual submission, we'll use the form filler directly
+            form_filler = form_pipeline.form_filler
+            form_filler.headless = request.headless
+            
+            # First analyze the form
+            analysis_result = await form_pipeline.form_analyzer.analyze_form(url, request.force_refresh)
+            
+            if analysis_result["status"] != "success":
+                return PipelineResponse(
+                    status="error",
+                    url=url,
+                    pipeline_status="failed",
+                    steps={"analysis": {"status": "failed", "error": analysis_result.get("error")}},
+                    message=f"Form analysis failed: {analysis_result.get('error', 'Unknown error')}"
+                )
+            
+            # Fill the form with manual submission
+            fill_result = await form_filler.auto_fill_form(
+                url=url,
+                user_data=user_data,
+                submit=False,  # Never auto-submit in manual mode
+                manual_submit=True
+            )
+            
+            return PipelineResponse(
+                status="success" if fill_result["status"] == "success" else "error",
+                url=url,
+                pipeline_status="completed_manual" if fill_result["status"] == "success" else "failed",
+                steps={
+                    "analysis": {"status": "success", "timestamp": analysis_result.get("timestamp")},
+                    "filling": {
+                        "status": fill_result["status"],
+                        "filled_fields": fill_result.get("filled_fields", 0),
+                        "screenshot": fill_result.get("screenshot")
+                    }
+                },
+                message="Form filled successfully. Browser kept open for manual submission." if fill_result["status"] == "success" else f"Form filling failed: {fill_result.get('error', 'Unknown error')}"
+            )
+        
+        else:
+            # Regular pipeline execution
+            form_pipeline.form_filler.headless = request.headless
+            
+            result = await form_pipeline.run_complete_pipeline(
+                url=url,
+                user_data=user_data,
+                force_refresh=request.force_refresh,
+                submit_form=request.submit,
+                preview_only=False
+            )
+            
+            return PipelineResponse(
+                status="success" if result["pipeline_status"] == "completed" else "error",
+                url=url,
+                pipeline_status=result["pipeline_status"],
+                steps=result.get("steps", {}),
+                message=result.get("error", "Pipeline completed successfully") if result["pipeline_status"] != "completed" else "Pipeline completed successfully"
+            )
+            
+    except Exception as e:
+        logger.error(f"Pipeline execution failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {str(e)}")
+
+@app.post("/api/analyze-form")
+async def analyze_form(request: PipelineRequest) -> Dict[str, Any]:
+    """
+    Analyze a form without filling it
+    """
+    if not form_pipeline:
+        raise HTTPException(status_code=503, detail="Form pipeline service not available")
+    
+    try:
+        url = str(request.url)
+        result = await form_pipeline.form_analyzer.analyze_form(url, request.force_refresh)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Form analysis failed: {str(e)}")
+
+# ============================================================================
+# HEALTH AND INFO ENDPOINTS
+# ============================================================================
+
+@app.get("/")
+async def root():
+    """Root endpoint with API information"""
+    return {
+        "message": "Smart Form Fill API - Vector Database + Form Auto-Fill",
+        "version": "2.0.0",
+        "features": [
+            "Vector database management for resume and personal info",
+            "Intelligent form analysis and auto-filling",
+            "LangChain-powered document processing",
+            "FAISS vector search capabilities"
+        ],
+        "endpoints": {
+            "vector_db": "/api/v1/",
+            "form_pipeline": "/api/run-pipeline",
+            "docs": "/docs"
+        }
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "services": {
+            "vector_databases": "ready",
+            "form_pipeline": "ready" if form_pipeline else "unavailable"
+        }
+    }
 
 if __name__ == "__main__":
     import uvicorn
