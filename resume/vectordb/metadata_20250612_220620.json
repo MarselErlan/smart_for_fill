@@ -1,0 +1,17 @@
+{
+  "embeddings_json": "resume/vectordb/embeddings_20250612_220620.json",
+  "embeddings_pickle": "resume/vectordb/embeddings_20250612_220620.pkl",
+  "faiss_store": "resume/vectordb/faiss_store_20250612_220620",
+  "timestamp": "20250612_220620",
+  "creation_date": "2025-06-12T22:06:21.001376",
+  "source_resume": "docs/resume/ERIC _ABRAM33.docx",
+  "total_chunks": 7,
+  "embedding_dimension": 1536,
+  "model": "text-embedding-3-small",
+  "chunk_stats": {
+    "total_characters": 5839,
+    "avg_chunk_size": 834.1428571428571,
+    "min_chunk_size": 420,
+    "max_chunk_size": 967
+  }
+}

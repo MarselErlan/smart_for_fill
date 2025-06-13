@@ -1,0 +1,17 @@
+{
+  "embeddings_json": "info/vectordb/personal_info_20250612_222756.json",
+  "embeddings_pickle": "info/vectordb/personal_info_20250612_222756.pkl",
+  "faiss_store": "info/vectordb/faiss_store_20250612_222756",
+  "timestamp": "20250612_222756",
+  "creation_date": "2025-06-12T22:27:56.149395",
+  "source_file": "docs/info/personal_information.txt",
+  "total_chunks": 4,
+  "embedding_dimension": 1536,
+  "model": "text-embedding-3-small",
+  "chunk_stats": {
+    "total_characters": 1610,
+    "avg_chunk_size": 402.5,
+    "min_chunk_size": 350,
+    "max_chunk_size": 435
+  }
+}

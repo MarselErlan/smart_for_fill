@@ -1,49 +1,41 @@
 """
-Smart Form Fill API - FastAPI routes for form analysis with Supabase integration
+Smart Form Fill API - Core form analysis endpoints
+Note: Vector database management has been moved to main.py
 """
 
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, List, Any, Optional
-import time
-
-from app.services.form_analyzer import FormAnalyzer
-from app.services.supabase_service import SupabaseService
-from db.schemas import (
-    FormAnalysisRequest,
-    FormResponse,
-    FormAnalysisResponse,
-    HealthResponse,
-    DetailedFormAnalysisResponse
-)
-from app.services.resume_extractor import ResumeExtractor
-from app.services.personal_info_vector import PersonalInfoVectorDB
+from typing import Dict, List, Any
+from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Check environment variables
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY environment variable is not set")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("SUPABASE_URL or SUPABASE_KEY environment variables not set")
+# Pydantic models
+class FormAnalysisRequest(BaseModel):
+    url: str
 
-# Initialize services
-form_analyzer = FormAnalyzer(openai_api_key=OPENAI_API_KEY)
-supabase_service = SupabaseService()
-resume_extractor = ResumeExtractor()
-personal_info_vector_db = PersonalInfoVectorDB()
+class FormAnalysisResponse(BaseModel):
+    status: str
+    message: str
+    url: str
+    analysis: Dict[str, Any] = None
+
+class HealthResponse(BaseModel):
+    status: str
+    message: str = "API is running"
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Smart Form Fill API",
-    description="AI-powered API for analyzing web forms with Supabase integration",
+    title="Smart Form Fill Core API",
+    description="Core form analysis functionality",
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -58,110 +50,79 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/api/analyze-form", response_model=FormAnalysisResponse)
-async def analyze_form(request: FormAnalysisRequest) -> Dict[str, Any]:
-    """
-    Analyze a web form at the provided URL and save to Supabase
-    """
-    url = str(request.url)
-    
-    try:
-        # Save URL to Supabase first
-        supabase_result = supabase_service.add_form_url(url)
-        
-        if supabase_result["status"] == "error":
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Failed to save URL to database: {supabase_result['message']}"
-            )
-        
-        # Analyze the form
-        analysis_result = form_analyzer.analyze_form(url)
-        
-        if analysis_result["status"] == "success":
-            # Update the form status to analyzed
-            supabase_service.update_form_analysis_status(url, True)
-            
-        # Return combined result
-        return {
-            **analysis_result,
-            "database_id": supabase_result.get("id"),
-            "url": url
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Form analysis failed: {str(e)}")
-
-@app.post("/api/analyze-form-detailed", response_model=DetailedFormAnalysisResponse)
-async def analyze_form_detailed(request: FormAnalysisRequest) -> Dict[str, Any]:
-    """
-    Analyze a web form with detailed field structure information
-    """
-    url = str(request.url)
-    
-    try:
-        # Get basic analysis first
-        basic_result = await analyze_form(request)
-        
-        # TODO: In a real implementation, you would parse the field_map to create structured fields
-        # This is a placeholder implementation
-        fields = []
-        
-        # Return enhanced result
-        return {
-            **basic_result,
-            "fields": fields
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Detailed form analysis failed: {str(e)}")
-
-@app.get("/api/forms", response_model=List[FormResponse])
-async def get_forms() -> List[FormResponse]:
-    """
-    Get all forms from the database
-    """
-    try:
-        forms = supabase_service.get_all_forms()
-        return forms
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve forms: {str(e)}")
-
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check() -> Dict[str, str]:
     """
     Health check endpoint
     """
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "message": "Smart Form Fill Core API is running"
+    }
 
-@app.post("/api/extract-resume")
-async def extract_resume(file: UploadFile = File(...)):
+@app.post("/api/analyze-form", response_model=FormAnalysisResponse)
+async def analyze_form(request: FormAnalysisRequest) -> Dict[str, Any]:
     """
-    Extract structured information from a resume file (PDF, DOCX, etc.)
+    Basic form analysis endpoint
+    Note: For vector database operations, use the main API at main.py
     """
-    # Save uploaded file temporarily
-    temp_path = f"/tmp/{file.filename}"
-    with open(temp_path, "wb") as f:
-        f.write(await file.read())
-    # Extract info
-    info = resume_extractor.extract(temp_path)
-    return {"status": "success", "data": info}
+    url = str(request.url)
+    
+    try:
+        # Basic URL validation
+        if not url.startswith(('http://', 'https://')):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid URL format. URL must start with http:// or https://"
+            )
+        
+        # Placeholder for form analysis
+        # In a real implementation, this would analyze the form structure
+        analysis_result = {
+            "status": "success",
+            "message": "Form analysis completed",
+            "url": url,
+            "analysis": {
+                "form_detected": True,
+                "field_count": 0,
+                "form_type": "unknown",
+                "note": "This is a placeholder. For full functionality, use the vector database API in main.py"
+            }
+        }
+        
+        return analysis_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Form analysis failed: {str(e)}"
+        )
 
-@app.post("/api/vectorize-personal-info")
-async def vectorize_personal_info(personal_info: dict):
+@app.get("/api/info")
+async def get_api_info():
     """
-    Vectorize and store personal info in the vector DB
+    Get information about available APIs
     """
-    vector = personal_info_vector_db.vectorize(personal_info)
-    # Example: use email as user_id, or generate one
-    user_id = personal_info.get("email", "unknown")
-    personal_info_vector_db.store(user_id, vector, personal_info)
-    return {"status": "success", "vector": vector}
-
-@app.post("/api/search-personal-info")
-async def search_personal_info(query: dict):
-    """
-    Search for similar personal info vectors
-    """
-    query_vector = personal_info_vector_db.vectorize(query)
-    results = personal_info_vector_db.search(query_vector)
-    return {"status": "success", "results": results} 
+    return {
+        "message": "Smart Form Fill API System",
+        "apis": {
+            "core_api": {
+                "description": "Basic form analysis (this API)",
+                "endpoints": ["/api/health", "/api/analyze-form", "/api/info"]
+            },
+            "vector_database_api": {
+                "description": "Vector database management (main.py)",
+                "base_url": "http://localhost:8000",
+                "endpoints": [
+                    "/api/v1/resume/reembed",
+                    "/api/v1/personal-info/reembed",
+                    "/api/v1/resume/search",
+                    "/api/v1/personal-info/search",
+                    "/api/v1/reembed-all"
+                ]
+            }
+        },
+        "note": "For vector database operations (re-embedding, searching), use the main API server"
+    } 

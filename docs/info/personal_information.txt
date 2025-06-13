@@ -1,0 +1,33 @@
+# Personal Information Template
+
+## Personal Information
+Full Name: Eric Abram
+Email: eric.abram@example.com
+Phone: (555) 123-4567
+LinkedIn: https://linkedin.com/in/eric-abram
+Location: San Francisco, CA
+
+## Work Authorization
+Are you authorized to work in the United States? Yes
+Do you require visa sponsorship now or in the future? No
+
+## Salary Expectations
+Expected salary range: $120,000 - $150,000 annually
+Salary negotiable: Yes
+
+## Availability
+Earliest start date: 2 weeks notice
+Remote work preference: Hybrid (3 days in office, 2 days remote)
+Willing to relocate: No
+
+## Additional Information
+Years of experience: 8+ years in software engineering
+Preferred technologies: Python, JavaScript, React, Node.js
+Industry preference: Technology, Fintech
+
+## Cover Letter Template
+I am excited to apply for this position as it aligns perfectly with my background in software engineering and my passion for building scalable applications. With over 8 years of experience in full-stack development, I have successfully delivered numerous projects using modern technologies like Python, JavaScript, and React.
+
+My experience includes working in agile environments, collaborating with cross-functional teams, and mentoring junior developers. I am particularly interested in opportunities that allow me to contribute to innovative solutions while continuing to grow professionally.
+
+I am available for interviews at your convenience and can start within two weeks of an offer. Thank you for considering my application. 
