@@ -118,20 +118,82 @@ class FormFiller:
         logger.info(f"🔍 Starting 3-tier intelligent data retrieval for {len(fields)} fields")
         logger.info(f"📋 Field purposes: {', '.join(field_purposes)}")
         
-        # Step 2: Search resume vector database for professional information
-        resume_data = await self._search_resume_vectordb(field_purposes)
-        
-        # Step 3: Search personal info vector database for additional details
-        personal_data = await self._search_personal_info_vectordb(field_purposes)
-        
+        # Step 2: Search resume vector database for professional information (embedding-based, per field)
+        resume_semantic_context = {}
+        try:
+            from resume_extractor import ResumeExtractor
+            from langchain_openai import OpenAIEmbeddings
+            from langchain_community.vectorstores import FAISS
+            resume_extractor = ResumeExtractor()
+            embeddings = resume_extractor.embeddings
+            vectordb_path = resume_extractor.vectordb_path
+            import json, os
+            index_file = vectordb_path / "index.json"
+            if index_file.exists():
+                with open(index_file, 'r') as f:
+                    index_data = json.load(f)
+                if index_data["entries"]:
+                    latest_entry = index_data["entries"][-1]
+                    faiss_path = latest_entry.get("faiss_store")
+                    if faiss_path and os.path.exists(faiss_path):
+                        vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
+                        for purpose in field_purposes:
+                            try:
+                                query_embedding = embeddings.embed_query(purpose)
+                                results = vectorstore.similarity_search_by_vector(query_embedding, k=1)
+                                if results:
+                                    resume_semantic_context[purpose] = results[0].page_content
+                            except Exception as e:
+                                logger.warning(f"Resume semantic context failed for '{purpose}': {e}")
+        except Exception as e:
+            logger.warning(f"Resume semantic context block failed: {e}")
+
+        # Step 3: Search personal info vector database for additional details (embedding-based, per field)
+        personal_semantic_context = {}
+        try:
+            from personal_info_extractor import PersonalInfoExtractor
+            from langchain_openai import OpenAIEmbeddings
+            from langchain_community.vectorstores import FAISS
+            personal_extractor = PersonalInfoExtractor()
+            embeddings = personal_extractor.embeddings
+            vectordb_path = personal_extractor.vectordb_path
+            import json, os
+            index_file = vectordb_path / "index.json"
+            if index_file.exists():
+                with open(index_file, 'r') as f:
+                    index_data = json.load(f)
+                if index_data["entries"]:
+                    latest_entry = index_data["entries"][-1]
+                    faiss_path = latest_entry.get("faiss_store")
+                    if faiss_path and os.path.exists(faiss_path):
+                        vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
+                        for purpose in field_purposes:
+                            try:
+                                query_embedding = embeddings.embed_query(purpose)
+                                results = vectorstore.similarity_search_by_vector(query_embedding, k=1)
+                                if results:
+                                    personal_semantic_context[purpose] = results[0].page_content
+                            except Exception as e:
+                                logger.warning(f"Personal info semantic context failed for '{purpose}': {e}")
+        except Exception as e:
+            logger.warning(f"Personal info semantic context block failed: {e}")
+
         # Step 4: Combine all available data
         combined_data = {
             "provided_user_data": user_data,
-            "resume_vectordb_data": resume_data,
-            "personal_info_vectordb_data": personal_data
+            "resume_vectordb_data": resume_semantic_context,
+            "personal_info_vectordb_data": personal_semantic_context
         }
         
-        # Step 5: Assess data completeness and quality
+        # Step 5: Attach semantic context to each field
+        for field in fields:
+            purpose = field.get("field_purpose", field.get("name", field.get("selector", "unknown")))
+            field["semantic_context"] = {
+                "resume": resume_semantic_context.get(purpose, None),
+                "personal_info": personal_semantic_context.get(purpose, None)
+            }
+        
+        # Step 6: Assess data completeness and quality
         data_assessment = self._assess_data_completeness(fields, combined_data)
         
         logger.info(f"📊 Data Assessment: {data_assessment['summary']}")
@@ -157,10 +219,10 @@ class FormFiller:
         AVAILABLE DATA SOURCES (prioritized):
         
         1. RESUME VECTOR DATABASE DATA (HIGHEST PRIORITY - USE FIRST):
-        {json.dumps(resume_data, indent=2) if resume_data else "No resume data found"}
+        {json.dumps(resume_semantic_context, indent=2) if resume_semantic_context else "No resume data found"}
         
         2. PERSONAL INFO VECTOR DATABASE DATA (SECOND PRIORITY):
-        {json.dumps(personal_data, indent=2) if personal_data else "No personal info data found"}
+        {json.dumps(personal_semantic_context, indent=2) if personal_semantic_context else "No personal info data found"}
         
         3. PROVIDED USER DATA (THIRD PRIORITY):
         {json.dumps(user_data, indent=2) if user_data else "No user data provided"}
@@ -277,177 +339,140 @@ class FormFiller:
     
     async def _search_resume_vectordb(self, field_purposes: List[str]) -> Dict[str, Any]:
         """
-        🎯 Search resume vector database for relevant professional information
+        🎯 Search resume vector database for relevant professional information using embedding-based similarity search
         """
         try:
             from resume_extractor import ResumeExtractor
-            
+            from langchain_openai import OpenAIEmbeddings
+            from langchain_community.vectorstores import FAISS
+
             resume_extractor = ResumeExtractor()
-            
-            # Create intelligent search queries based on field purposes
-            search_queries = []
-            
-            # Map field purposes to relevant search terms
-            purpose_mapping = {
-                "name": ["name", "full name", "contact information"],
-                "email": ["email", "contact", "email address"],
-                "phone": ["phone", "contact", "phone number", "mobile"],
-                "location": ["location", "address", "city", "residence"],
-                "company": ["company", "employer", "work experience", "current job"],
-                "position": ["position", "title", "role", "job title", "current position"],
-                "experience": ["experience", "work history", "professional background", "career"],
-                "skills": ["skills", "technical skills", "expertise", "technologies"],
-                "education": ["education", "degree", "university", "school", "academic"],
-                "linkedin": ["linkedin", "profile", "social media"],
-                "github": ["github", "portfolio", "projects", "code"],
-                "portfolio": ["portfolio", "website", "projects", "work samples"],
-                "salary": ["salary", "compensation", "pay", "income"],
-                "work_authorization": ["work authorization", "visa", "citizenship", "eligibility"],
-                "cover_letter": ["summary", "objective", "about", "professional summary"],
-                "additional_info": ["achievements", "accomplishments", "highlights", "summary"]
-            }
-            
-            # Generate search queries based on field purposes
-            for purpose in field_purposes:
-                purpose_lower = purpose.lower()
-                for key, terms in purpose_mapping.items():
-                    if any(term in purpose_lower for term in [key] + terms):
-                        search_queries.extend(terms[:2])  # Take top 2 relevant terms
-                        break
-            
-            # Remove duplicates and limit queries
-            search_queries = list(set(search_queries))[:5]
-            
-            if not search_queries:
-                search_queries = ["professional experience", "work history", "skills", "education"]
-            
-            logger.info(f"🔍 Resume search queries: {search_queries}")
-            
-            # Perform searches and combine results
+            embeddings = resume_extractor.embeddings
+            vectordb_path = resume_extractor.vectordb_path
+            # Load latest FAISS store
+            import json, os
+            index_file = vectordb_path / "index.json"
+            if not index_file.exists():
+                return {"status": "not_found", "message": "No resume vector database found."}
+            with open(index_file, 'r') as f:
+                index_data = json.load(f)
+            if not index_data["entries"]:
+                return {"status": "not_found", "message": "No entries in resume vector database."}
+            latest_entry = index_data["entries"][-1]
+            faiss_path = latest_entry.get("faiss_store")
+            if not faiss_path or not os.path.exists(faiss_path):
+                return {"status": "not_found", "message": "No FAISS store available for resume."}
+            vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
+
             all_results = []
-            for query in search_queries:
+            for purpose in field_purposes:
                 try:
-                    search_result = resume_extractor.search_resume(query, k=3)
-                    if search_result and "results" in search_result:
-                        all_results.extend(search_result["results"])
+                    # Embed the field purpose/question
+                    query_embedding = embeddings.embed_query(purpose)
+                    # Similarity search by vector
+                    results = vectorstore.similarity_search_by_vector(query_embedding, k=3)
+                    for doc in results:
+                        all_results.append({
+                            "content": doc.page_content,
+                            "metadata": doc.metadata,
+                            "field_purpose": purpose
+                        })
                 except Exception as e:
-                    logger.warning(f"Resume search failed for '{query}': {e}")
-            
+                    logger.warning(f"Resume embedding search failed for '{purpose}': {e}")
+
             # Process and structure the results
             if all_results:
-                # Combine content and remove duplicates
                 unique_content = []
                 seen_content = set()
-                
-                for result in all_results:
-                    # Handle both dict and string results
-                    if isinstance(result, dict):
-                        content = result.get("content", "").strip()
-                    elif isinstance(result, str):
-                        content = result.strip()
-                    else:
-                        content = str(result).strip()
-                    
-                    if content and content not in seen_content:
-                        unique_content.append(content)
-                        seen_content.add(content)
-                
-                resume_data = {
-                    "status": "found",
-                    "total_results": len(all_results),
-                    "unique_content_pieces": len(unique_content),
-                    "content": " ".join(unique_content[:10]),  # Limit content length
-                    "search_queries_used": search_queries,
-                    "data_source": "resume_vectordb"
-                }
-                
-                logger.info(f"✅ Resume data found: {len(unique_content)} unique pieces")
-                return resume_data
-            else:
-                logger.warning("⚠️ No resume data found in vector database")
-                return {"status": "not_found", "message": "No resume data available"}
-                
-        except Exception as e:
-            logger.error(f"❌ Resume vector search failed: {e}")
-            return {"status": "error", "error": str(e)}
-    
-    async def _search_personal_info_vectordb(self, field_purposes: List[str]) -> Dict[str, Any]:
-        """
-        🎯 Search personal info vector database for contact details and preferences
-        """
-        try:
-            from personal_info_extractor import PersonalInfoExtractor
-            
-            personal_extractor = PersonalInfoExtractor()
-            
-            # Create targeted search queries for personal information
-            personal_queries = []
-            
-            # Map field purposes to personal info search terms
-            personal_mapping = {
-                "contact": ["contact information", "email", "phone", "address"],
-                "location": ["location", "address", "city", "residence", "current location"],
-                "work_authorization": ["work authorization", "visa status", "sponsorship", "eligibility"],
-                "salary": ["salary expectations", "compensation", "desired salary", "pay range"],
-                "preferences": ["work preferences", "remote work", "hybrid", "availability"],
-                "personal": ["personal information", "about me", "background"],
-                "additional": ["additional information", "notes", "preferences", "comments"]
-            }
-            
-            # Generate search queries
-            for purpose in field_purposes:
-                purpose_lower = purpose.lower()
-                for key, terms in personal_mapping.items():
-                    if any(term in purpose_lower for term in [key] + terms):
-                        personal_queries.extend(terms[:2])
-                        break
-            
-            # Remove duplicates and add default queries
-            personal_queries = list(set(personal_queries))[:5]
-            
-            if not personal_queries:
-                personal_queries = ["contact information", "work authorization", "salary expectations"]
-            
-            logger.info(f"🔍 Personal info search queries: {personal_queries}")
-            
-            # Perform searches
-            all_results = []
-            for query in personal_queries:
-                try:
-                    results = personal_extractor.search_personal_info(query, k=3)
-                    if results and "results" in results:
-                        all_results.extend(results["results"])
-                except Exception as e:
-                    logger.warning(f"Personal info search failed for '{query}': {e}")
-            
-            # Process results
-            if all_results:
-                unique_content = []
-                seen_content = set()
-                
                 for result in all_results:
                     content = result.get("content", "").strip()
                     if content and content not in seen_content:
                         unique_content.append(content)
                         seen_content.add(content)
-                
+                resume_data = {
+                    "status": "found",
+                    "total_results": len(all_results),
+                    "unique_content_pieces": len(unique_content),
+                    "content": " ".join(unique_content[:10]),
+                    "search_type": "embedding",
+                    "data_source": "resume_vectordb"
+                }
+                logger.info(f"✅ Resume data found (embedding search): {len(unique_content)} unique pieces")
+                return resume_data
+            else:
+                logger.warning("⚠️ No resume data found in vector database (embedding search)")
+                return {"status": "not_found", "message": "No resume data available (embedding search)"}
+        except Exception as e:
+            logger.error(f"❌ Resume vector embedding search failed: {e}")
+            return {"status": "error", "error": str(e)}
+    
+    async def _search_personal_info_vectordb(self, field_purposes: List[str]) -> Dict[str, Any]:
+        """
+        🎯 Search personal info vector database for contact details and preferences using embedding-based similarity search
+        """
+        try:
+            from personal_info_extractor import PersonalInfoExtractor
+            from langchain_openai import OpenAIEmbeddings
+            from langchain_community.vectorstores import FAISS
+
+            personal_extractor = PersonalInfoExtractor()
+            embeddings = personal_extractor.embeddings
+            vectordb_path = personal_extractor.vectordb_path
+            # Load latest FAISS store
+            import json, os
+            index_file = vectordb_path / "index.json"
+            if not index_file.exists():
+                return {"status": "not_found", "message": "No personal info vector database found."}
+            with open(index_file, 'r') as f:
+                index_data = json.load(f)
+            if not index_data["entries"]:
+                return {"status": "not_found", "message": "No entries in personal info vector database."}
+            latest_entry = index_data["entries"][-1]
+            faiss_path = latest_entry.get("faiss_store")
+            if not faiss_path or not os.path.exists(faiss_path):
+                return {"status": "not_found", "message": "No FAISS store available for personal info."}
+            vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
+
+            all_results = []
+            for purpose in field_purposes:
+                try:
+                    # Embed the field purpose/question
+                    query_embedding = embeddings.embed_query(purpose)
+                    # Similarity search by vector
+                    results = vectorstore.similarity_search_by_vector(query_embedding, k=3)
+                    for doc in results:
+                        all_results.append({
+                            "content": doc.page_content,
+                            "metadata": doc.metadata,
+                            "field_purpose": purpose
+                        })
+                except Exception as e:
+                    logger.warning(f"Personal info embedding search failed for '{purpose}': {e}")
+
+            # Process and structure the results
+            if all_results:
+                unique_content = []
+                seen_content = set()
+                for result in all_results:
+                    content = result.get("content", "").strip()
+                    if content and content not in seen_content:
+                        unique_content.append(content)
+                        seen_content.add(content)
                 personal_data = {
                     "status": "found",
                     "total_results": len(all_results),
                     "unique_content_pieces": len(unique_content),
-                    "content": " ".join(unique_content[:8]),  # Limit content length
-                    "search_queries_used": personal_queries,
+                    "content": " ".join(unique_content[:8]),
+                    "search_type": "embedding",
                     "data_source": "personal_info_vectordb"
                 }
-                
-                logger.info(f"✅ Personal info data found: {len(unique_content)} unique pieces")
+                logger.info(f"✅ Personal info data found (embedding search): {len(unique_content)} unique pieces")
                 return personal_data
             else:
-                logger.warning("⚠️ No personal info data found in vector database")
-                return {"status": "not_found", "message": "No personal info data available"}
-                
+                logger.warning("⚠️ No personal info data found in vector database (embedding search)")
+                return {"status": "not_found", "message": "No personal info data available (embedding search)"}
         except Exception as e:
-            logger.error(f"❌ Personal info vector search failed: {e}")
+            logger.error(f"❌ Personal info vector embedding search failed: {e}")
             return {"status": "error", "error": str(e)}
     
     def _assess_data_completeness(self, fields: List[Dict], combined_data: Dict) -> Dict[str, Any]:

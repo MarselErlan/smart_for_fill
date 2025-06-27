@@ -244,42 +244,96 @@ async def reembed_personal_info():
         raise HTTPException(status_code=500, detail=f"Failed to re-embed personal info: {str(e)}")
 
 @app.post("/api/v1/resume/search", response_model=SearchResponse)
-async def search_resume(query: str = Query(..., description="Search query"), k: int = Query(3, description="Number of results")):
-    """Search the resume vector database"""
+async def search_resume(
+    query: str = Query(..., description="Search query or field question"),
+    k: int = Query(3, description="Number of results"),
+    mode: str = Query("embedding", description="Search mode: 'embedding' or 'keyword'")
+):
+    """Search the resume vector database (supports embedding-based search)"""
     try:
         start_time = datetime.now()
-        
-        # Perform search
-        results = resume_extractor.search_resume(query, k)
-        
+        if mode == "embedding":
+            from resume_extractor import ResumeExtractor
+            from langchain_openai import OpenAIEmbeddings
+            from langchain_community.vectorstores import FAISS
+            resume_extractor = ResumeExtractor()
+            embeddings = resume_extractor.embeddings
+            vectordb_path = resume_extractor.vectordb_path
+            import json, os
+            index_file = vectordb_path / "index.json"
+            if not index_file.exists():
+                raise HTTPException(status_code=404, detail="No resume vector database found.")
+            with open(index_file, 'r') as f:
+                index_data = json.load(f)
+            if not index_data["entries"]:
+                raise HTTPException(status_code=404, detail="No entries in resume vector database.")
+            latest_entry = index_data["entries"][-1]
+            faiss_path = latest_entry.get("faiss_store")
+            if not faiss_path or not os.path.exists(faiss_path):
+                raise HTTPException(status_code=404, detail="No FAISS store available for resume.")
+            vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
+            query_embedding = embeddings.embed_query(query)
+            results = vectorstore.similarity_search_by_vector(query_embedding, k=k)
+            formatted_results = [
+                {"content": doc.page_content, "metadata": doc.metadata} for doc in results
+            ]
+        else:
+            results = resume_extractor.search_resume(query, k)
+            formatted_results = results["results"] if "results" in results else []
         end_time = datetime.now()
         search_time = (end_time - start_time).total_seconds()
-        
         return SearchResponse(
             status="success",
             query=query,
-            results=results,
+            results=formatted_results,
             search_time=search_time
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Resume search failed: {str(e)}")
 
 @app.post("/api/v1/personal-info/search", response_model=SearchResponse)
-async def search_personal_info(query: str = Query(..., description="Search query"), k: int = Query(3, description="Number of results")):
-    """Search the personal info vector database"""
+async def search_personal_info(
+    query: str = Query(..., description="Search query or field question"),
+    k: int = Query(3, description="Number of results"),
+    mode: str = Query("embedding", description="Search mode: 'embedding' or 'keyword'")
+):
+    """Search the personal info vector database (supports embedding-based search)"""
     try:
         start_time = datetime.now()
-        
-        # Perform search
-        results = personal_info_extractor.search_personal_info(query, k)
-        
+        if mode == "embedding":
+            from personal_info_extractor import PersonalInfoExtractor
+            from langchain_openai import OpenAIEmbeddings
+            from langchain_community.vectorstores import FAISS
+            personal_info_extractor = PersonalInfoExtractor()
+            embeddings = personal_info_extractor.embeddings
+            vectordb_path = personal_info_extractor.vectordb_path
+            import json, os
+            index_file = vectordb_path / "index.json"
+            if not index_file.exists():
+                raise HTTPException(status_code=404, detail="No personal info vector database found.")
+            with open(index_file, 'r') as f:
+                index_data = json.load(f)
+            if not index_data["entries"]:
+                raise HTTPException(status_code=404, detail="No entries in personal info vector database.")
+            latest_entry = index_data["entries"][-1]
+            faiss_path = latest_entry.get("faiss_store")
+            if not faiss_path or not os.path.exists(faiss_path):
+                raise HTTPException(status_code=404, detail="No FAISS store available for personal info.")
+            vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
+            query_embedding = embeddings.embed_query(query)
+            results = vectorstore.similarity_search_by_vector(query_embedding, k=k)
+            formatted_results = [
+                {"content": doc.page_content, "metadata": doc.metadata} for doc in results
+            ]
+        else:
+            results = personal_info_extractor.search_personal_info(query, k)
+            formatted_results = results["results"] if "results" in results else []
         end_time = datetime.now()
         search_time = (end_time - start_time).total_seconds()
-        
         return SearchResponse(
             status="success",
             query=query,
-            results=results,
+            results=formatted_results,
             search_time=search_time
         )
     except Exception as e:
