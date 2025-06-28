@@ -1,0 +1,97 @@
+Eric Abram
+
+Full-Stack Software Test Automation Engineer(SDET)
+
+ Chicago, IL |  LinkedIn 
+
+312-805-9851 | ericabram33@gmail.com 
+
+
+
+Software Development Engineer in Test (SDET) with 6+ years of experience in Java-driven test automation and backend testing, specializing in UI (Selenium WebDriver, Appium), API (RestAssured, Postman, SOAP UI, Swagger), and database testing (SQL, MySQL, PostgreSQL, Oracle SQL, JDBC) across manual and automated frameworks (JUnit, TestNG, Pytest, Cucumber). Proficient in Java, Python (FastAPI, Django), JavaScript, Swift, Kotlin, and SQL, I excel in building and optimizing CI/CD pipelines (Jenkins, ArgoCD, GitLab, Docker, Kubernetes) and developing backend systems, leveraging Lombok for streamlined Java development and Kafka for real-time data streaming. Adept at building frameworks from scratch in Agile teams (Jira, Scrum)
+
+
+
+SKILLS
+
+Programming Languages: Java, Python, JavaScript, Swift, Kotlin, SQL
+
+Automation & Testing Tools: RestAssured, Selenium WebDriver, Appium, Cucumber (BDD), JUnit, TestNG, JMeter (Performance Testing), Cypress, Karate
+
+CI/CD Tools: Jenkins, Kubernetes, Docker, GitLab, GitHub, ArgoCD, Bitbucket
+
+API Testing: RestAssured, Postman, Swagger, SOAP UI, Fiddler
+
+Cloud & Frameworks: AWS, Django REST Framework
+
+Database Technologies: PostgreSQL, MySQL, Oracle SQL, JDBC, DynamoDB
+
+Monitoring & Reporting: Splunk, Kibana, Log4J, Extent Reports, SonarQube
+
+Development Environments: Eclipse, Visual Studio Code, PyCharm, Xcode
+
+Other Tools: Kafka, Lombok, Apache POI, Jackson, Consul
+
+Agile & Project Management: Agile, Jira, Scrum, TestRail, Confluence
+
+
+
+Types of Testing: API Testing (Postman, RestAssured test cases), UI Testing (Selenium, Cypress test cases), Integration Testing (API-UI integration), Database Testing – Manual (SQL data validation), Database Testing – Automated (JDBC data integrity validation), Functional Testing (Manual and automated tests), End-to-End Testing (Full system validation), BDD Testing (Cucumber), Performance Testing (JMeter load tests), Security Testing (Security scans), Regression Testing (Post-bug fixes), User Acceptance Testing (Sprint review with stakeholders), Manual Testing (Functional testing)
+
+
+
+
+
+
+
+
+
+EXPERIENCE
+
+Kaiser Permanente                                                                         	August 2022 – Present
+
+SDET
+
+- Designed and implemented test automation frameworks using Selenium WebDriver, JUnit, and Maven, achieving 90% automation coverage for critical healthcare applications.
+
+- Enhanced CI/CD pipelines using Jenkins, Docker, and Kubernetes, reducing deployment errors by 30% and improving release efficiency.
+
+- Developed and maintained automated UI test suites using Swift and XCTest for iOS applications.
+
+- Led API and UI testing efforts with RestAssured, Postman, Swagger, and Cucumber, ensuring compliance with regulatory requirements and maintaining transactional data integrity using SQL and PostgreSQL.
+
+- Utilized Splunk and Kibana for monitoring and log analysis, improving system reliability and issue resolution time in collaboration with cross-functional teams.
+
+- Performed mobile testing using Appium to ensure application compatibility and performance across mobile devices.
+
+
+
+Wells Fargo                                                                                     	August 2020 – July 2022
+
+QA Engineer
+
+- Developed comprehensive automation frameworks with Selenium WebDriver, TestNG, and Java, increasing test coverage by 85% for banking and financial systems.
+
+- Streamlined CI/CD pipelines using Jenkins, GitLab, and Docker, enhancing system scalability and reliability.
+
+- Conducted API testing using Postman, RestAssured, and SOAP UI, ensuring seamless integration and performance of financial applications.
+
+- Validated database operations using SQL, Oracle SQL, and MySQL, improving data accuracy and consistency across critical financial systems.
+
+- Automated reporting and log management using Log4J and Extent Reports, reducing manual intervention and improving test result transparency.
+
+- Integrated Apache Kafka for real-time data streaming and messaging queues, boosting system responsiveness and enabling efficient processing of large-scale financial transactions.
+
+
+
+Blue Cross Blue Shield of Illinois                                                      August 2018 – July 2020
+
+QA Analyst
+
+- Performed manual testing for healthcare claims processing systems, focusing on UI and API testing using tools such as Jira and TestRail for test case management and defect tracking.
+
+- Collaborated in Agile sprints, executing test cases, performing regression testing, and participating in UAT to ensure business requirements were met.
+
+- Conducted database testing manually using SQL and MySQL to validate data integrity across healthcare platforms.
+
+- Engaged in test planning and design using Excel and Confluence, ensuring all test documentation was up to date and aligned with system requirements.-

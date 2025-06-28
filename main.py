@@ -12,9 +12,10 @@ from pydantic import BaseModel, HttpUrl
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from loguru import logger
+from app.services.resume_extractor import ResumeExtractor
+from app.services.personal_info_extractor import PersonalInfoExtractor
 
-from resume_extractor import ResumeExtractor
-from personal_info_extractor import PersonalInfoExtractor
+
 
 # Import form filling services
 from app.services.form_pipeline import FormPipeline
@@ -61,8 +62,8 @@ clear_redis_cache_on_startup()
 # Initialize form pipeline for auto-filling
 try:
     form_pipeline = FormPipeline(
-        openai_api_key=OPENAI_API_KEY,
         db_url=DATABASE_URL,
+        openai_api_key=OPENAI_API_KEY,
         cache_service=cache_service
     )
     logger.info("✅ Form pipeline initialized successfully")
@@ -246,40 +247,35 @@ async def reembed_personal_info():
 @app.post("/api/v1/resume/search", response_model=SearchResponse)
 async def search_resume(
     query: str = Query(..., description="Search query or field question"),
-    k: int = Query(3, description="Number of results"),
-    mode: str = Query("embedding", description="Search mode: 'embedding' or 'keyword'")
+    k: int = Query(3, description="Number of results")
 ):
-    """Search the resume vector database (supports embedding-based search)"""
+    """Search the resume vector database (embedding-based only)"""
     try:
         start_time = datetime.now()
-        if mode == "embedding":
-            from resume_extractor import ResumeExtractor
-            from langchain_openai import OpenAIEmbeddings
-            from langchain_community.vectorstores import FAISS
-            resume_extractor = ResumeExtractor()
-            embeddings = resume_extractor.embeddings
-            vectordb_path = resume_extractor.vectordb_path
-            import json, os
-            index_file = vectordb_path / "index.json"
-            if not index_file.exists():
-                raise HTTPException(status_code=404, detail="No resume vector database found.")
-            with open(index_file, 'r') as f:
-                index_data = json.load(f)
-            if not index_data["entries"]:
-                raise HTTPException(status_code=404, detail="No entries in resume vector database.")
-            latest_entry = index_data["entries"][-1]
-            faiss_path = latest_entry.get("faiss_store")
-            if not faiss_path or not os.path.exists(faiss_path):
-                raise HTTPException(status_code=404, detail="No FAISS store available for resume.")
-            vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
-            query_embedding = embeddings.embed_query(query)
-            results = vectorstore.similarity_search_by_vector(query_embedding, k=k)
-            formatted_results = [
-                {"content": doc.page_content, "metadata": doc.metadata} for doc in results
-            ]
-        else:
-            results = resume_extractor.search_resume(query, k)
-            formatted_results = results["results"] if "results" in results else []
+        from app.services.resume_extractor import ResumeExtractor
+        from langchain_openai import OpenAIEmbeddings
+        from langchain_community.vectorstores import FAISS
+        resume_extractor = ResumeExtractor()
+        embeddings = resume_extractor.embeddings
+        vectordb_path = resume_extractor.vectordb_path
+        import json, os
+        index_file = vectordb_path / "index.json"
+        if not index_file.exists():
+            raise HTTPException(status_code=404, detail="No resume vector database found.")
+        with open(index_file, 'r') as f:
+            index_data = json.load(f)
+        if not index_data["entries"]:
+            raise HTTPException(status_code=404, detail="No entries in resume vector database.")
+        latest_entry = index_data["entries"][-1]
+        faiss_path = latest_entry.get("faiss_store")
+        if not faiss_path or not os.path.exists(faiss_path):
+            raise HTTPException(status_code=404, detail="No FAISS store available for resume.")
+        vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
+        query_embedding = embeddings.embed_query(query)
+        results = vectorstore.similarity_search_by_vector(query_embedding, k=k)
+        formatted_results = [
+            {"content": doc.page_content, "metadata": doc.metadata} for doc in results
+        ]
         end_time = datetime.now()
         search_time = (end_time - start_time).total_seconds()
         return SearchResponse(
@@ -294,40 +290,35 @@ async def search_resume(
 @app.post("/api/v1/personal-info/search", response_model=SearchResponse)
 async def search_personal_info(
     query: str = Query(..., description="Search query or field question"),
-    k: int = Query(3, description="Number of results"),
-    mode: str = Query("embedding", description="Search mode: 'embedding' or 'keyword'")
+    k: int = Query(3, description="Number of results")
 ):
-    """Search the personal info vector database (supports embedding-based search)"""
+    """Search the personal info vector database (embedding-based only)"""
     try:
         start_time = datetime.now()
-        if mode == "embedding":
-            from personal_info_extractor import PersonalInfoExtractor
-            from langchain_openai import OpenAIEmbeddings
-            from langchain_community.vectorstores import FAISS
-            personal_info_extractor = PersonalInfoExtractor()
-            embeddings = personal_info_extractor.embeddings
-            vectordb_path = personal_info_extractor.vectordb_path
-            import json, os
-            index_file = vectordb_path / "index.json"
-            if not index_file.exists():
-                raise HTTPException(status_code=404, detail="No personal info vector database found.")
-            with open(index_file, 'r') as f:
-                index_data = json.load(f)
-            if not index_data["entries"]:
-                raise HTTPException(status_code=404, detail="No entries in personal info vector database.")
-            latest_entry = index_data["entries"][-1]
-            faiss_path = latest_entry.get("faiss_store")
-            if not faiss_path or not os.path.exists(faiss_path):
-                raise HTTPException(status_code=404, detail="No FAISS store available for personal info.")
-            vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
-            query_embedding = embeddings.embed_query(query)
-            results = vectorstore.similarity_search_by_vector(query_embedding, k=k)
-            formatted_results = [
-                {"content": doc.page_content, "metadata": doc.metadata} for doc in results
-            ]
-        else:
-            results = personal_info_extractor.search_personal_info(query, k)
-            formatted_results = results["results"] if "results" in results else []
+        from app.services.personal_info_extractor import PersonalInfoExtractor
+        from langchain_openai import OpenAIEmbeddings
+        from langchain_community.vectorstores import FAISS
+        personal_info_extractor = PersonalInfoExtractor()
+        embeddings = personal_info_extractor.embeddings
+        vectordb_path = personal_info_extractor.vectordb_path
+        import json, os
+        index_file = vectordb_path / "index.json"
+        if not index_file.exists():
+            raise HTTPException(status_code=404, detail="No personal info vector database found.")
+        with open(index_file, 'r') as f:
+            index_data = json.load(f)
+        if not index_data["entries"]:
+            raise HTTPException(status_code=404, detail="No entries in personal info vector database.")
+        latest_entry = index_data["entries"][-1]
+        faiss_path = latest_entry.get("faiss_store")
+        if not faiss_path or not os.path.exists(faiss_path):
+            raise HTTPException(status_code=404, detail="No FAISS store available for personal info.")
+        vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
+        query_embedding = embeddings.embed_query(query)
+        results = vectorstore.similarity_search_by_vector(query_embedding, k=k)
+        formatted_results = [
+            {"content": doc.page_content, "metadata": doc.metadata} for doc in results
+        ]
         end_time = datetime.now()
         search_time = (end_time - start_time).total_seconds()
         return SearchResponse(
@@ -382,130 +373,33 @@ async def reembed_all():
 @app.post("/api/run-pipeline", response_model=PipelineResponse)
 async def run_pipeline(request: PipelineRequest) -> Dict[str, Any]:
     """
-    🚀 MAIN ENDPOINT: Run complete form filling pipeline (analyze → fill → submit)
-    
-    Features:
-    - Automatic form analysis and filling
-    - Vector database integration for user data
-    - Manual submission mode (keeps browser open)
-    - Document-based user data loading
+    Run the complete form pipeline: analyze labels, extract questions, (optionally fill/submit)
     """
-    if not form_pipeline:
-        raise HTTPException(
-            status_code=503, 
-            detail="Form pipeline service not available. Check environment variables."
-        )
-    
-    try:
-        url = str(request.url)
-        user_data = request.user_data.copy()
-        
-        # Load user data from vector databases if requested
-        if request.use_documents:
-            logger.info("📄 Loading user data from vector databases")
-            
-            try:
-                # Search resume for relevant info
-                resume_search_result = resume_extractor.search_resume("professional experience skills education", k=5)
-                resume_text = ""
-                if resume_search_result and "results" in resume_search_result:
-                    resume_text = " ".join([r.get("content", "") for r in resume_search_result["results"]])
-                
-                # Search personal info for contact details
-                personal_search_result = personal_info_extractor.search_personal_info("contact information work authorization salary", k=3)
-                personal_text = ""
-                if personal_search_result and "results" in personal_search_result:
-                    personal_text = " ".join([r.get("content", "") for r in personal_search_result["results"]])
-                
-                # Combine vector database data
-                vector_data = {
-                    "resume_content": resume_text,
-                    "personal_info": personal_text,
-                    "data_source": "vector_databases"
-                }
-                
-                # Merge with provided user_data
-                user_data.update(vector_data)
-                logger.info("✅ Vector database data loaded successfully")
-                
-            except Exception as e:
-                logger.warning(f"⚠️ Could not load vector database data: {e}")
-        
-        # Run the form pipeline
-        if request.manual_submit:
-            logger.info("🖱️ Manual submission mode - browser will stay open")
-            
-            # For manual submission, we'll use the form filler directly
-            form_filler = form_pipeline.form_filler
-            form_filler.headless = request.headless
-            
-            # First analyze the form
-            analysis_result = await form_pipeline.form_analyzer.analyze_form(url, request.force_refresh)
-            
-            if analysis_result["status"] != "success":
-                return PipelineResponse(
-                    status="error",
-                    url=url,
-                    pipeline_status="failed",
-                    steps={"analysis": {"status": "failed", "error": analysis_result.get("error")}},
-                    message=f"Form analysis failed: {analysis_result.get('error', 'Unknown error')}"
-                )
-            
-            # Fill the form with manual submission
-            fill_result = await form_filler.auto_fill_form(
-                url=url,
-                user_data=user_data,
-                submit=False,  # Never auto-submit in manual mode
-                manual_submit=True
-            )
-            
-            return PipelineResponse(
-                status="success" if fill_result["status"] == "success" else "error",
-                url=url,
-                pipeline_status="completed_manual" if fill_result["status"] == "success" else "failed",
-                steps={
-                    "analysis": {"status": "success", "timestamp": analysis_result.get("timestamp")},
-                    "filling": {
-                        "status": fill_result["status"],
-                        "filled_fields": fill_result.get("filled_fields", 0),
-                        "screenshot": fill_result.get("screenshot")
-                    }
-                },
-                message="Form filled successfully. Browser kept open for manual submission." if fill_result["status"] == "success" else f"Form filling failed: {fill_result.get('error', 'Unknown error')}"
-            )
-        
-        else:
-            # Regular pipeline execution
-            form_pipeline.form_filler.headless = request.headless
-            
-            result = await form_pipeline.run_complete_pipeline(
-                url=url,
-                user_data=user_data,
-                force_refresh=request.force_refresh,
-                submit_form=request.submit,
-                preview_only=False
-            )
-            
-            return PipelineResponse(
-                status="success" if result["pipeline_status"] == "completed" else "error",
-                url=url,
-                pipeline_status=result["pipeline_status"],
-                steps=result.get("steps", {}),
-                message=result.get("error", "Pipeline completed successfully") if result["pipeline_status"] != "completed" else "Pipeline completed successfully"
-            )
-            
-    except Exception as e:
-        logger.error(f"Pipeline execution failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {str(e)}")
+    if form_pipeline is None:
+        raise HTTPException(status_code=503, detail="Form pipeline not initialized.")
+    result = await form_pipeline.run_complete_pipeline(
+        url=str(request.url),
+        user_data=request.user_data,
+        force_refresh=request.force_refresh,
+        submit_form=request.submit,
+        preview_only=not request.submit
+    )
+    # Return the new structure with label_html and question for each label
+    return {
+        "status": "success" if result.get("pipeline_status") == "completed" else "error",
+        "url": result.get("url"),
+        "pipeline_status": result.get("pipeline_status"),
+        "steps": result.get("steps"),
+        "message": result.get("results", {}).get("status", "No result"),
+    }
 
 @app.post("/api/analyze-form")
 async def analyze_form(request: PipelineRequest) -> Dict[str, Any]:
     """
-    Analyze a form without filling it
+    Analyze a form without filling it (fast mode only)
     """
     if not form_pipeline:
         raise HTTPException(status_code=503, detail="Form pipeline service not available")
-    
     try:
         url = str(request.url)
         result = await form_pipeline.form_analyzer.analyze_form(url, request.force_refresh)

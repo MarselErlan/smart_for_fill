@@ -23,47 +23,79 @@ class FormFiller:
         self.headless = headless
         self.keep_browser_open = keep_browser_open
     
-    async def auto_fill_form(self, url: str, user_data: Dict, submit: bool = False, manual_submit: bool = False) -> Dict[str, Any]:
+    async def auto_fill_form(self, url: str, field_mappings: list, user_data: dict) -> dict:
         """
-        Automatically fill form by retrieving analysis from Redis cache
-        
-        Args:
-            url: Form URL to fill
-            user_data: User's professional data (resume info, personal details)
-            submit: Whether to submit the form automatically
-            manual_submit: If True, keeps browser open for manual submission
+        Auto-fill form fields using semantic similarity between field labels and vector DB content.
+        For each field: label/placeholder → treat as question → embed → vector search → get best match for autofill.
         """
-        logger.info(f"Starting auto-fill for: {url}")
-        
-        # Get form analysis from Redis cache
-        cache_key = f"form:{url}"
-        cached_data = self.cache.get(cache_key)
-        
-        if not cached_data:
-            return {
-                "status": "error", 
-                "error": f"No form analysis found in cache for {url}. Please analyze the form first using /api/analyze-form"
+        # Defensive: ensure field_mappings is a non-empty list
+        if not isinstance(field_mappings, list) or not field_mappings or not all(isinstance(f, dict) for f in field_mappings):
+            logger.warning(f"auto_fill_form: No valid field mappings provided: {field_mappings}")
+            return {"status": "error", "error": "No valid field mappings provided"}
+        logger.info(f"auto_fill_form: Received {len(field_mappings)} field mappings from analyzer")
+        from resume_extractor import ResumeExtractor
+        from personal_info_extractor import PersonalInfoExtractor
+        from langchain_openai import OpenAIEmbeddings
+        from langchain_community.vectorstores import FAISS
+        import os, json
+        results = {}
+        resume_extractor = ResumeExtractor()
+        personal_extractor = PersonalInfoExtractor()
+        resume_embeddings = resume_extractor.embeddings
+        personal_embeddings = personal_extractor.embeddings
+        resume_vectordb_path = resume_extractor.vectordb_path
+        personal_vectordb_path = personal_extractor.vectordb_path
+        # Load latest FAISS stores
+        def load_vectorstore(vectordb_path, embeddings):
+            index_file = vectordb_path / "index.json"
+            if not index_file.exists():
+                return None
+            with open(index_file, 'r') as f:
+                index_data = json.load(f)
+            if not index_data["entries"]:
+                return None
+            latest_entry = index_data["entries"][-1]
+            faiss_path = latest_entry.get("faiss_store")
+            if not faiss_path or not os.path.exists(faiss_path):
+                return None
+            return FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
+        resume_vectorstore = load_vectorstore(resume_vectordb_path, resume_embeddings)
+        personal_vectorstore = load_vectorstore(personal_vectordb_path, personal_embeddings)
+        for field in field_mappings:
+            label = field.get("label") or field.get("placeholder") or field.get("name") or field.get("selector")
+            logger.info(f"auto_fill_form: Embedding for field: {label}")
+            if not label:
+                continue
+            # Embed the label/question
+            best_match = None
+            best_source = None
+            if resume_vectorstore and resume_embeddings:
+                try:
+                    query_embedding = resume_embeddings.embed_query(label)
+                    results_resume = resume_vectorstore.similarity_search_by_vector(query_embedding, k=1)
+                    if results_resume:
+                        best_match = results_resume[0].page_content
+                        best_source = "resume_vectordb"
+                except Exception as e:
+                    logger.warning(f"Resume vector search failed for '{label}': {e}")
+            if not best_match and personal_vectorstore and personal_embeddings:
+                try:
+                    query_embedding = personal_embeddings.embed_query(label)
+                    results_personal = personal_vectorstore.similarity_search_by_vector(query_embedding, k=1)
+                    if results_personal:
+                        best_match = results_personal[0].page_content
+                        best_source = "personal_info_vectordb"
+                except Exception as e:
+                    logger.warning(f"Personal info vector search failed for '{label}': {e}")
+            # Fallback to user_data if available
+            if not best_match and user_data:
+                best_match = user_data.get(label)
+                best_source = "user_data" if best_match else None
+            results[label] = {
+                "autofill_value": best_match,
+                "data_source": best_source
             }
-        
-        # Extract field map from cached analysis
-        analysis = cached_data.get("analysis", {})
-        if analysis.get("status") != "success":
-            return {
-                "status": "error",
-                "error": f"Cached form analysis failed: {analysis.get('error', 'Unknown error')}"
-            }
-        
-        field_map = analysis.get("field_map")
-        if not field_map:
-            return {
-                "status": "error",
-                "error": "No field map found in cached analysis"
-            }
-        
-        logger.info(f"Retrieved form analysis from Redis cache for {url}")
-        
-        # Use the existing fill_form method with cached data
-        return await self.fill_form(url, field_map, user_data, submit, manual_submit)
+        return {"status": "success", "results": results}
     
     async def fill_form(self, url: str, field_map: str, user_data: Dict, submit: bool = False, manual_submit: bool = False) -> Dict[str, Any]:
         """

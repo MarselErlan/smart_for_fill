@@ -10,6 +10,8 @@ from app.services.form_filler import FormFiller
 from app.services.cache_service import CacheService
 import os
 from dotenv import load_dotenv
+import pytest
+pytestmark = pytest.mark.asyncio
 
 load_dotenv()
 

@@ -9,10 +9,13 @@ import os
 from typing import Dict, Any, Optional
 from loguru import logger
 from datetime import datetime
-
 from app.services.form_analyzer import FormAnalyzer
 from app.services.form_filler import FormFiller
 from app.services.cache_service import CacheService
+from app.services.llm_services import extract_question_from_label_html
+from app.services.embed_questions_service import embed_question
+from dotenv import load_dotenv
+load_dotenv()
 
 class FormPipeline:
     def __init__(self, openai_api_key: str, db_url: str, cache_service: CacheService = None):
@@ -20,13 +23,11 @@ class FormPipeline:
         
         # Initialize both services
         self.form_analyzer = FormAnalyzer(
-            openai_api_key=openai_api_key,
-            db_url=db_url,
             cache_service=self.cache
         )
         
         self.form_filler = FormFiller(
-            openai_api_key=openai_api_key,
+            openai_api_key=os.getenv("OPENAI_API_KEY"),
             cache_service=self.cache,
             headless=True
         )
@@ -63,84 +64,40 @@ class FormPipeline:
         }
         
         try:
-            # Step 1: Form Analysis
-            logger.info("Pipeline Step 1: Form Analysis")
-            analysis_result = await self.form_analyzer.analyze_form(url, force_refresh)
-            
-            pipeline_result["steps"]["analysis"] = {
-                "status": analysis_result["status"],
-                "timestamp": analysis_result.get("timestamp"),
-                "cached": not force_refresh and "cached" in str(analysis_result)
+            # Step 1: Label Extraction (fast mode only)
+            logger.info("Pipeline Step 1: Label Extraction (fast mode)")
+            label_result = await self.form_analyzer.analyze_labels_fast(url, force_refresh)
+            # Extract questions and embeddings from label HTMLs
+            extracted = []
+            for label_html in label_result.get("labels", []):
+                question = extract_question_from_label_html(label_html, use_llm=False)
+                embedding = [0.0] * 10
+                extracted.append({
+                    "label_html": label_html,
+                    "question": question,
+                    "embedding": embedding
+                })
+            pipeline_result["steps"]["label_extraction"] = {
+                "status": label_result["status"],
+                "label_count": label_result.get("label_count", 0),
+                "labels": extracted
             }
-            
-            if analysis_result["status"] != "success":
+            logger.info(f"Label extraction result: {pipeline_result['steps']['label_extraction']}")
+            if label_result["status"] != "success":
                 pipeline_result["pipeline_status"] = "failed"
-                pipeline_result["error"] = f"Analysis failed: {analysis_result.get('error', 'Unknown error')}"
+                pipeline_result["error"] = f"Label extraction failed: {label_result.get('error', 'Unknown error')}"
                 return pipeline_result
             
-            logger.info("✅ Pipeline Step 1 completed: Form Analysis successful")
-            
-            # Step 2: Form Filling (Preview or Actual)
-            if preview_only:
-                logger.info("Pipeline Step 2: Form Fill Preview")
-                fill_result = await self.form_filler.preview_auto_fill(url, user_data)
-                step_name = "preview"
-            else:
-                logger.info("Pipeline Step 2: Form Filling")
-                fill_result = await self.form_filler.auto_fill_form(url, user_data, submit_form)
-                step_name = "filling"
-            
-            pipeline_result["steps"][step_name] = {
-                "status": fill_result["status"],
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            if fill_result["status"] != "success":
-                pipeline_result["pipeline_status"] = "failed"
-                pipeline_result["error"] = f"Form {step_name} failed: {fill_result.get('error', 'Unknown error')}"
-                return pipeline_result
-            
-            # Add specific results based on step type
-            if preview_only:
-                pipeline_result["steps"]["preview"].update({
-                    "total_fields": fill_result.get("total_fields", 0),
-                    "fillable_fields": fill_result.get("fillable_fields", 0),
-                    "summary": fill_result.get("summary", "")
-                })
-                logger.info(f"✅ Pipeline Step 2 completed: Preview generated ({fill_result.get('fillable_fields', 0)} fillable fields)")
-            else:
-                pipeline_result["steps"]["filling"].update({
-                    "filled_fields": fill_result.get("filled_fields", 0),
-                    "screenshot": fill_result.get("screenshot"),
-                    "submit_result": fill_result.get("submit_result")
-                })
-                logger.info(f"✅ Pipeline Step 2 completed: Form filled ({fill_result.get('filled_fields', 0)} fields)")
-                
-                # Step 3: Submission (if requested and not already done)
-                if submit_form and fill_result.get("submit_result"):
-                    submit_status = fill_result["submit_result"]["status"]
-                    pipeline_result["steps"]["submission"] = {
-                        "status": submit_status,
-                        "timestamp": datetime.now().isoformat(),
-                        "final_url": fill_result["submit_result"].get("final_url"),
-                        "method": fill_result["submit_result"].get("method")
-                    }
-                    
-                    if submit_status == "submitted":
-                        logger.info("✅ Pipeline Step 3 completed: Form submitted successfully")
-                    else:
-                        logger.warning(f"⚠️ Pipeline Step 3: Submission issue - {submit_status}")
-            
-            # Pipeline completed successfully
+            # Optionally, you could continue to filling, but for now just return the label extraction result
             pipeline_end = datetime.now()
             pipeline_result.update({
                 "pipeline_status": "completed",
                 "end_time": pipeline_end.isoformat(),
                 "duration_seconds": (pipeline_end - pipeline_start).total_seconds(),
-                "results": fill_result
+                "results": pipeline_result["steps"]["label_extraction"]
             })
             
-            logger.info(f"🎉 Complete pipeline finished successfully in {pipeline_result['duration_seconds']:.2f}s")
+            logger.info(f"🎉 Label extraction pipeline finished successfully in {pipeline_result['duration_seconds']:.2f}s")
             return pipeline_result
             
         except Exception as e:

@@ -18,10 +18,11 @@ import sys
 import json
 import argparse
 from pathlib import Path
+import pytest
 
 # Import the resume_extractor module
 try:
-    from resume_extractor import (
+    from app.services.resume_extractor import (
         extract_text_from_resume, 
         analyze_resume, 
         extract_contact_information,
@@ -30,8 +31,17 @@ try:
     )
 except ImportError:
     print("Error: Could not import resume_extractor module.")
-    print("Make sure resume_extractor.py is in the current directory.")
+    print("Make sure app/services/resume_extractor.py is in the correct location.")
     sys.exit(1)
+
+@pytest.fixture
+def pdf_path():
+    # Provide a real or dummy path to a test resume file
+    return "docs/resume/ERIC _ABRAM33.docx"
+
+@pytest.fixture
+def text(pdf_path):
+    return extract_text_from_resume(pdf_path)
 
 def test_basic_extraction(pdf_path):
     """Test basic text extraction from PDF"""
@@ -82,39 +92,13 @@ def test_full_analysis(pdf_path):
     print("\n" + "="*50)
     print("TESTING FULL RESUME ANALYSIS")
     print("="*50)
-    
+
     resume = analyze_resume(pdf_path)
-    
-    print("Resume sections found:")
-    for section in resume.sections:
-        content_preview = resume.sections[section][:50].replace("\n", " ")
-        print(f"- {section.capitalize()}: {content_preview}...")
-    
-    print("\nExperience entries:")
-    for i, exp in enumerate(resume.experience, 1):
-        print(f"{i}. {exp.title} at {exp.company} ({exp.start_date} - {exp.end_date or 'Present'})")
-    
-    print("\nEducation entries:")
-    for i, edu in enumerate(resume.education, 1):
-        print(f"{i}. {edu.degree or 'Degree'} at {edu.institution}")
-    
-    print("\nSkills:")
-    skill_categories = {}
-    for skill in resume.skills:
-        category = skill.category or "Other"
-        if category not in skill_categories:
-            skill_categories[category] = []
-        skill_categories[category].append(skill.name)
-    
-    for category, skills in skill_categories.items():
-        print(f"- {category}: {', '.join(skills)}")
-    
-    # Save the analysis to JSON
-    output_path = os.path.join("output", Path(pdf_path).stem + "_analysis.json")
-    save_resume_as_json(resume, output_path)
-    print(f"\nAnalysis saved to {output_path}")
-    
-    return resume
+
+    print("Resume content preview:")
+    print(resume.page_content[:300] + "...")
+    print("Metadata:", resume.metadata)
+    # Optionally, add more assertions or checks here
 
 def test_embedding_generation(text):
     """Test generating embeddings for AI matching"""
